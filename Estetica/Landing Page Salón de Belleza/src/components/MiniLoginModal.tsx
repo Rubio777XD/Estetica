@@ -97,13 +97,10 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
     await new Promise(resolve => setTimeout(resolve, 1500));
 
     if (formData.email === 'admin@salonar.com' && formData.password === 'admin123') {
-      setSuccessMessage('¡Bienvenida! Redirigiendo...');
+      setSuccessMessage('¡Bienvenida! Preparando tu panel...');
       setTimeout(() => {
-        // opcional: marcar también aquí
-        localStorage.setItem('salon_auth', 'ok');
-        // 👇 pasa el flag por la URL al dashboard (PUERTO 3003)
-        window.location.href = 'http://localhost:3003/?auth=dev';
-      }, 1000);
+        onLoginSuccess();
+      }, 800);
     } else {
       setErrors({ general: 'Credenciales incorrectas. Intenta de nuevo.' });
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Menu, X } from "lucide-react";
 import { MiniLoginModal } from "./MiniLoginModal";
@@ -17,12 +17,23 @@ interface LuxuryHeaderProps {
   onNavigate: (sectionId: string) => void;
 }
 
-const DASHBOARD_URL = "http://localhost:3003/?auth=dev"; // ajusta si hace falta
+const DASHBOARD_BASE_URL =
+  import.meta.env.VITE_PUBLIC_DASHBOARD_URL || "http://localhost:3003";
+const DASHBOARD_URL = `${DASHBOARD_BASE_URL.replace(/\/$/, "")}/?auth=dev`;
 
 export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [pendingSection, setPendingSection] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedAuth = window.localStorage.getItem("salon_auth");
+    if (storedAuth === "ok") {
+      setIsLoggedIn(true);
+    }
+  }, []);
 
   const handleNavClick = (sectionId: string) => {
     onNavigate(sectionId);
@@ -31,27 +42,51 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
 
   // CITA → ir directo a agendar (sin login)
   const handleCitaClick = () => {
-    handleNavClick("agendar");
+    if (isLoggedIn) {
+      handleNavClick("agendar");
+    } else {
+      setPendingSection("agendar");
+      setShowLoginModal(true);
+    }
   };
 
   // Avatar E → login empleados
   const handleAvatarClick = () => {
-    if (!isLoggedIn) setShowLoginModal(true);
+    if (!isLoggedIn) {
+      setPendingSection(null);
+      setShowLoginModal(true);
+    }
   };
 
   // Al iniciar sesión: solo cerrar modal y mostrar botón Dashboard
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("salon_auth", "ok");
+    }
     setShowLoginModal(false);
+    if (pendingSection) {
+      handleNavClick(pendingSection);
+    }
+    setPendingSection(null);
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("salon_auth");
+    }
+    setPendingSection(null);
     handleNavClick("home");
   };
 
   const goDashboard = () => {
     window.open(DASHBOARD_URL, "_self");
+  };
+
+  const handleCloseLoginModal = () => {
+    setShowLoginModal(false);
+    setPendingSection(null);
   };
 
   return (
@@ -217,7 +252,7 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
       {/* Mini Login Modal */}
       <MiniLoginModal
         isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
+        onClose={handleCloseLoginModal}
         onLoginSuccess={handleLoginSuccess}
       />
     </>

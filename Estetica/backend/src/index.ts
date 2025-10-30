@@ -9,7 +9,12 @@ import jwt from "jsonwebtoken";
 dotenv.config();
 
 const app = express();
-app.use(cors());
+const allowedOrigins = ["http://localhost:3001", "http://localhost:3003"];
+app.use(
+  cors({
+    origin: allowedOrigins,
+  })
+);
 app.use(express.json());
 
 // Salud

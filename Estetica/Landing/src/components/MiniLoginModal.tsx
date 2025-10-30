@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Mail, Lock, Eye, EyeOff, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { fetchMe, login } from '../lib/auth';
+
+const DASHBOARD_URL = (
+  import.meta.env.VITE_PUBLIC_DASHBOARD_URL as string | undefined || 'http://localhost:3003'
+).replace(/\/$/, '') + '/';
 
 interface MiniLoginModalProps {
   isOpen: boolean;
@@ -92,20 +97,33 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    setIsLoading(true);
+    setSuccessMessage('');
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    if (formData.email === 'admin@salonar.com' && formData.password === 'admin123') {
-      setSuccessMessage('¡Bienvenida! Preparando tu panel...');
-      setTimeout(() => {
-        onLoginSuccess();
-      }, 800);
-    } else {
-      setErrors({ general: 'Credenciales incorrectas. Intenta de nuevo.' });
+    const isValid = validateForm();
+    if (!isValid) {
+      return;
     }
 
-    setIsLoading(false);
+    setIsLoading(true);
+
+    try {
+      await login(formData.email.trim(), formData.password);
+      const user = await fetchMe();
+      setSuccessMessage(
+        user?.name ? `¡Hola ${user.name}! Redirigiendo al panel...` : '¡Inicio de sesión exitoso!'
+      );
+
+      onLoginSuccess();
+
+      setTimeout(() => {
+        window.location.href = DASHBOARD_URL;
+      }, 600);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error al iniciar sesión.';
+      setErrors({ general: message || 'Error al iniciar sesión.' });
+    } finally {
+      setIsLoading(false);
+    }
   };
   const handleForgotPassword = () => {
     alert('Se ha enviado un enlace de recuperación a tu email (funcionalidad demo)');
@@ -250,8 +268,8 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
             <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10">
               <p className="text-xs text-gray-400 mb-2 font-medium">Credenciales de prueba:</p>
               <div className="space-y-1">
-                <p className="text-xs text-gray-300 font-mono">admin@salonar.com</p>
-                <p className="text-xs text-gray-300 font-mono">admin123</p>
+                <p className="text-xs text-gray-300 font-mono">admin@estetica.mx</p>
+                <p className="text-xs text-gray-300 font-mono">password123</p>
               </div>
             </div>
           </div>

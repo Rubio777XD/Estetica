@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Menu, X } from "lucide-react";
 import { MiniLoginModal } from "./MiniLoginModal";
+import { fetchMe, logout as clearSession } from "../lib/auth";
 
 const navigationItems = [
   { id: "home", label: "Home" },
@@ -28,11 +29,27 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   const [pendingSection, setPendingSection] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedAuth = window.localStorage.getItem("salon_auth");
-    if (storedAuth === "ok") {
-      setIsLoggedIn(true);
-    }
+    let isMounted = true;
+
+    const bootstrapSession = async () => {
+      try {
+        await fetchMe();
+        if (isMounted) {
+          setIsLoggedIn(true);
+        }
+      } catch (error) {
+        clearSession();
+        if (isMounted) {
+          setIsLoggedIn(false);
+        }
+      }
+    };
+
+    bootstrapSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleNavClick = (sectionId: string) => {
@@ -61,9 +78,6 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   // Al iniciar sesión: solo cerrar modal y mostrar botón Dashboard
   const handleLoginSuccess = () => {
     setIsLoggedIn(true);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("salon_auth", "ok");
-    }
     setShowLoginModal(false);
     if (pendingSection) {
       handleNavClick(pendingSection);
@@ -73,9 +87,7 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem("salon_auth");
-    }
+    clearSession();
     setPendingSection(null);
     handleNavClick("home");
   };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { PropsWithChildren, useEffect, useState } from 'react';
 import { Calendar, Users, Scissors, CreditCard, Package, BookOpen, Home, Settings } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
@@ -13,6 +13,52 @@ import Servicios from './components/Servicios';
 import Pagos from './components/Pagos';
 import Inventario from './components/Inventario';
 import Citas from './components/Citas';
+import { dropSession, ensureSession } from './lib/auth';
+
+const LANDING_FALLBACK = (
+  import.meta.env.VITE_PUBLIC_LANDING_URL as string | undefined || 'http://localhost:3001/'
+).replace(/\/$/, '') + '/';
+
+function AuthGuard({ children }: PropsWithChildren) {
+  const [status, setStatus] = useState<'checking' | 'ready'>('checking');
+
+  useEffect(() => {
+    let isActive = true;
+
+    const validate = async () => {
+      try {
+        await ensureSession();
+        if (isActive) {
+          setStatus('ready');
+        }
+      } catch (error) {
+        dropSession();
+        if (typeof window !== 'undefined') {
+          window.location.replace(LANDING_FALLBACK);
+        }
+      }
+    };
+
+    validate();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  if (status === 'checking') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <div className="text-center space-y-2">
+          <div className="w-10 h-10 border-2 border-white/60 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm tracking-wide uppercase text-white/70">Cargando…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
@@ -22,7 +68,7 @@ const menuItems = [
   { id: 'inventario', label: 'Inventario', icon: Package },
 ];
 
-export default function App() {
+function AppShell() {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
 
@@ -211,3 +257,12 @@ export default function App() {
     </>
   );
 }
+
+export default function App() {
+  return (
+    <AuthGuard>
+      <AppShell />
+    </AuthGuard>
+  );
+}
+

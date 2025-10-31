@@ -10,6 +10,7 @@ import { BookingStatus, PaymentMethod, Prisma, Role } from '@prisma/client';
 import { prisma } from './db';
 import { authJWT, AuthedRequest } from './authJWT';
 import { clearSessionCookie, setSessionCookie } from './session';
+import { broadcastEvent, registerSseClient } from './events';
 import {
   addMinutes,
   DEFAULT_TZ,
@@ -219,6 +220,39 @@ app.post('/api/logout', (_req, res) => {
   return sendSuccess(res, { loggedOut: true }, 'Sesión finalizada');
 });
 
+app.get('/api/public/events', (req, res) => {
+  registerSseClient(req, res, 'public');
+});
+
+app.get('/api/events', authJWT, (req: AuthedRequest, res) => {
+  registerSseClient(req, res, 'auth');
+});
+
+const publicRouter = express.Router();
+
+publicRouter.get(
+  '/services',
+  asyncHandler(async (_req, res) => {
+    const services = await prisma.service.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        duration: true,
+        description: true,
+        imageUrl: true,
+        highlights: true,
+        updatedAt: true,
+      },
+    });
+
+    return sendSuccess(res, { services }, 'Servicios públicos');
+  })
+);
+
+app.use('/api/public', publicRouter);
+
 const protectedRouter = express.Router();
 protectedRouter.use(authJWT);
 
@@ -234,7 +268,55 @@ const serviceSchema = z.object({
   name: z.string().trim().min(1).max(100),
   price: z.coerce.number().positive(),
   duration: z.coerce.number().int().min(5).max(480),
+  description: z.string().trim().max(500).optional().nullable(),
+  imageUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .nullable()
+    .refine(
+      (value) =>
+        value === null ||
+        value === undefined ||
+        value.length === 0 ||
+        value.startsWith('/') ||
+        /^https?:\/\//i.test(value),
+      'URL inválida'
+    ),
+  highlights: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
 });
+
+const buildServiceData = (input: z.infer<typeof serviceSchema>) => {
+  const data: {
+    name: string;
+    price: number;
+    duration: number;
+    description?: string | null;
+    imageUrl?: string | null;
+    highlights?: string[];
+  } = {
+    name: input.name,
+    price: input.price,
+    duration: input.duration,
+  };
+
+  if (input.description !== undefined) {
+    const trimmed = input.description?.trim();
+    data.description = trimmed && trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (input.imageUrl !== undefined) {
+    const trimmed = input.imageUrl?.trim();
+    data.imageUrl = trimmed && trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (input.highlights !== undefined) {
+    data.highlights = input.highlights.map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+
+  return data;
+};
 
 protectedRouter.get(
   '/services',
@@ -255,7 +337,9 @@ protectedRouter.post(
     }
 
     try {
-      const service = await prisma.service.create({ data: result.data });
+      const service = await prisma.service.create({ data: buildServiceData(result.data) });
+      broadcastEvent('service:created', { id: service.id }, 'all');
+      broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
       return sendSuccess(res, { service }, 'Servicio creado', 201);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -280,7 +364,9 @@ protectedRouter.put(
     }
 
     try {
-      const service = await prisma.service.update({ where: { id: req.params.id }, data: result.data });
+      const service = await prisma.service.update({ where: { id: req.params.id }, data: buildServiceData(result.data) });
+      broadcastEvent('service:updated', { id: service.id }, 'all');
+      broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
       return sendSuccess(res, { service }, 'Servicio actualizado');
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -307,6 +393,8 @@ protectedRouter.delete(
       }
       throw error;
     }
+    broadcastEvent('service:deleted', { id: req.params.id }, 'all');
+    broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
     return sendSuccess(res, { deleted: true }, 'Servicio eliminado');
   })
 );
@@ -388,34 +476,38 @@ protectedRouter.post(
       throw new HttpError(400, 'Datos inválidos', result.error.flatten());
     }
 
-    const { clientName, serviceId, startTime, notes } = result.data;
-    const service = await prisma.service.findUnique({ where: { id: serviceId } });
-    if (!service) {
-      throw new HttpError(404, 'Servicio no encontrado');
-    }
+    const booking = await prisma.$transaction(async (tx) => {
+      const { clientName, serviceId, startTime, notes } = result.data;
+      const service = await tx.service.findUnique({ where: { id: serviceId } });
+      if (!service) {
+        throw new HttpError(404, 'Servicio no encontrado');
+      }
 
-    const start = new Date(startTime);
-    if (Number.isNaN(start.getTime())) {
-      throw new HttpError(400, 'Fecha de inicio inválida');
-    }
+      const start = new Date(startTime);
+      if (Number.isNaN(start.getTime())) {
+        throw new HttpError(400, 'Fecha de inicio inválida');
+      }
 
-    const end = addMinutes(start, service.duration);
-    const normalized = normalizeNotes(notes);
-    const data: Parameters<typeof prisma.booking.create>[0]['data'] = {
-      clientName,
-      serviceId,
-      startTime: start,
-      endTime: end,
-    };
-    if (normalized !== undefined) {
-      data.notes = normalized;
-    }
+      const end = addMinutes(start, service.duration);
+      const normalized = normalizeNotes(notes);
+      const data: Parameters<typeof tx.booking.create>[0]['data'] = {
+        clientName,
+        serviceId,
+        startTime: start,
+        endTime: end,
+      };
+      if (normalized !== undefined) {
+        data.notes = normalized;
+      }
 
-    const booking = await prisma.booking.create({
-      data,
-      include: { service: true, payments: true },
+      return tx.booking.create({
+        data,
+        include: { service: true, payments: true },
+      });
     });
 
+    broadcastEvent('booking:created', { id: booking.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
     return sendSuccess(res, { booking }, 'Cita creada', 201);
   })
 );
@@ -428,40 +520,44 @@ protectedRouter.put(
       throw new HttpError(400, 'Datos inválidos', result.error.flatten());
     }
 
-    const existing = await prisma.booking.findUnique({ where: { id: req.params.id } });
-    if (!existing) {
-      throw new HttpError(404, 'Cita no encontrada');
-    }
+    const booking = await prisma.$transaction(async (tx) => {
+      const existing = await tx.booking.findUnique({ where: { id: req.params.id } });
+      if (!existing) {
+        throw new HttpError(404, 'Cita no encontrada');
+      }
 
-    const { clientName, serviceId, startTime, notes, status } = result.data;
-    const service = await prisma.service.findUnique({ where: { id: serviceId } });
-    if (!service) {
-      throw new HttpError(404, 'Servicio no encontrado');
-    }
+      const { clientName, serviceId, startTime, notes, status } = result.data;
+      const service = await tx.service.findUnique({ where: { id: serviceId } });
+      if (!service) {
+        throw new HttpError(404, 'Servicio no encontrado');
+      }
 
-    const start = new Date(startTime);
-    if (Number.isNaN(start.getTime())) {
-      throw new HttpError(400, 'Fecha de inicio inválida');
-    }
+      const start = new Date(startTime);
+      if (Number.isNaN(start.getTime())) {
+        throw new HttpError(400, 'Fecha de inicio inválida');
+      }
 
-    const normalized = normalizeNotes(notes);
-    const updateData: Parameters<typeof prisma.booking.update>[0]['data'] = {
-      clientName,
-      serviceId,
-      startTime: start,
-      endTime: addMinutes(start, service.duration),
-      status,
-    };
-    if (normalized !== undefined) {
-      updateData.notes = normalized;
-    }
+      const normalized = normalizeNotes(notes);
+      const updateData: Parameters<typeof tx.booking.update>[0]['data'] = {
+        clientName,
+        serviceId,
+        startTime: start,
+        endTime: addMinutes(start, service.duration),
+        status,
+      };
+      if (normalized !== undefined) {
+        updateData.notes = normalized;
+      }
 
-    const booking = await prisma.booking.update({
-      where: { id: req.params.id },
-      data: updateData,
-      include: { service: true, payments: true },
+      return tx.booking.update({
+        where: { id: req.params.id },
+        data: updateData,
+        include: { service: true, payments: true },
+      });
     });
 
+    broadcastEvent('booking:updated', { id: booking.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
     return sendSuccess(res, { booking }, 'Cita actualizada');
   })
 );
@@ -485,6 +581,8 @@ protectedRouter.patch(
       include: { service: true, payments: true },
     });
 
+    broadcastEvent('booking:status', { id: booking.id, status: booking.status }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-status' }, 'auth');
     return sendSuccess(res, { booking }, 'Estado actualizado');
   })
 );
@@ -497,6 +595,8 @@ protectedRouter.delete(
     } catch (error) {
       throw new HttpError(404, 'Cita no encontrada');
     }
+    broadcastEvent('booking:deleted', { id: req.params.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
     return sendSuccess(res, { deleted: true }, 'Cita eliminada');
   })
 );
@@ -559,16 +659,21 @@ protectedRouter.post(
       throw new HttpError(400, 'Datos inválidos', result.error.flatten());
     }
 
-    const booking = await prisma.booking.findUnique({ where: { id: result.data.bookingId } });
-    if (!booking) {
-      throw new HttpError(404, 'Cita no encontrada para pago');
-    }
+    const payment = await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findUnique({ where: { id: result.data.bookingId } });
+      if (!booking) {
+        throw new HttpError(404, 'Cita no encontrada para pago');
+      }
 
-    const payment = await prisma.payment.create({
-      data: result.data,
-      include: { booking: { include: { service: true } } },
+      return tx.payment.create({
+        data: result.data,
+        include: { booking: { include: { service: true } } },
+      });
     });
 
+    broadcastEvent('payment:created', { id: payment.id }, 'auth');
+    broadcastEvent('payments:invalidate', { id: payment.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'payment-change' }, 'auth');
     return sendSuccess(res, { payment }, 'Pago registrado', 201);
   })
 );
@@ -609,6 +714,8 @@ protectedRouter.post(
     }
 
     const product = await prisma.product.create({ data: result.data });
+    broadcastEvent('product:created', { id: product.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'inventory-change' }, 'auth');
     return sendSuccess(res, { product }, 'Producto creado', 201);
   })
 );
@@ -627,6 +734,8 @@ protectedRouter.put(
     }
 
     const product = await prisma.product.update({ where: { id: req.params.id }, data: result.data });
+    broadcastEvent('product:updated', { id: product.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'inventory-change' }, 'auth');
     return sendSuccess(res, { product }, 'Producto actualizado');
   })
 );
@@ -642,6 +751,8 @@ protectedRouter.delete(
       }
       throw error;
     }
+    broadcastEvent('product:deleted', { id: req.params.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'inventory-change' }, 'auth');
     return sendSuccess(res, { deleted: true }, 'Producto eliminado');
   })
 );

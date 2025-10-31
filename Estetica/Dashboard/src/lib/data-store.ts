@@ -44,6 +44,14 @@ export function invalidateQuery(keys: QueryKey | QueryKey[]) {
   }
 }
 
+export function invalidateQueriesMatching(prefix: string) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) {
+      notify(key, { type: 'invalidate' });
+    }
+  }
+}
+
 export interface UseApiQueryState<T> {
   data: T | undefined;
   error: unknown;

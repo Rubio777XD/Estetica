@@ -1,42 +1,131 @@
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-
-const services = [
-  {
-    id: 'manicure',
-    name: 'Manicure',
-    description: 'Tratamiento completo de manos con técnicas especializadas, productos de lujo y acabados impecables.',
-    features: ['Limado y forma perfecta', 'Cutícula especializada', 'Esmaltado de larga duración'],
-    priceFrom: '$200',
-    duration: '45-60 min',
-    image: "/assets/unas3.jfif"
-  },
-  {
-    id: 'pedicure',
-    name: 'Pedicure',
-    description: 'Experiencia relajante completa para tus pies con tratamientos hidratantes y técnicas de relajación.',
-    features: ['Exfoliación profunda', 'Masaje terapéutico', 'Hidratación intensiva'],
-    priceFrom: '$200',
-    duration: '60-75 min',
-    image: "https://images.unsplash.com/photo-1675034743433-bdc9aee1cafc?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBwZWRpY3VyZSUyMHNwYSUyMHRyZWF0bWVudHxlbnwxfHx8fDE3NTcwNDUyMzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-  },
-  {
-    id: 'pestanas',
-    name: 'Pestañas',
-    description: 'Mirada impactante con extensiones de pestañas de alta calidad, técnicas 3D y resultados naturales.',
-    features: ['Técnica volumen ruso', 'Pestañas premium', 'Duración 3-4 semanas'],
-    priceFrom: '$200',
-    duration: '90-120 min',
-    image: "https://images.unsplash.com/photo-1645735123314-d11fcfdd0000?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleWVsYXNoJTIwZXh0ZW5zaW9uJTIwYmVhdXR5JTIwbHV4dXJ5fGVufDF8fHx8MTc1NzA0NTIzOXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
-  }
-];
+import { usePublicServices } from "../../lib/services-store";
 
 interface ServicesSectionProps {
   onNavigateToBooking: (serviceId?: string) => void;
 }
 
 export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
+  const { services, status, error, refresh } = usePublicServices();
+  const currencyFormatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+
+  const renderContent = () => {
+    if (status === "loading") {
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index} className="luxury-card overflow-hidden rounded-2xl animate-pulse">
+              <div className="relative h-72 bg-white/5" />
+              <CardContent className="p-8 space-y-4">
+                <div className="h-6 bg-white/10 rounded" />
+                <div className="h-4 bg-white/5 rounded w-3/4" />
+                <div className="space-y-2 pt-4">
+                  <div className="h-3 bg-white/5 rounded" />
+                  <div className="h-3 bg-white/5 rounded w-2/3" />
+                  <div className="h-3 bg-white/5 rounded w-1/2" />
+                </div>
+                <div className="h-10 bg-white/10 rounded" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      );
+    }
+
+    if (status === "error") {
+      return (
+        <div className="max-w-3xl mx-auto text-center py-16 space-y-6">
+          <p className="font-body text-lg text-white/80">
+            {error ?? "No fue posible cargar los servicios en este momento."}
+          </p>
+          <Button onClick={() => refresh()} variant="outline" className="border-white text-white hover:bg-white hover:text-black">
+            Reintentar
+          </Button>
+        </div>
+      );
+    }
+
+    if (!services.length) {
+      return (
+        <div className="max-w-3xl mx-auto text-center py-16 space-y-4">
+          <h3 className="font-heading text-2xl text-white">Próximamente</h3>
+          <p className="font-body text-white/70">
+            Nuestro equipo está preparando un nuevo catálogo de servicios. Vuelve más tarde para descubrirlo.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+        {services.map((service, index) => {
+          const highlights = service.highlights && service.highlights.length > 0 ? service.highlights : [];
+          const heroImage = service.imageUrl && service.imageUrl.length > 0 ? service.imageUrl : "/assets/unas3.jfif";
+          return (
+            <Card
+              key={service.id}
+              className="group luxury-card luxury-hover overflow-hidden rounded-2xl"
+              style={{ animationDelay: `${index * 100}ms` }}
+            >
+              <div className="relative h-72 overflow-hidden">
+                <ImageWithFallback
+                  src={heroImage}
+                  alt={service.name}
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                  loading="lazy"
+                  decoding="async"
+                  sizes="(min-width: 1024px) 320px, 90vw"
+                  width={640}
+                  height={640}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                <div className="absolute top-4 right-4 bg-[#D4AF37]/90 backdrop-blur-sm rounded-full px-3 py-1">
+                  <span className="font-sans text-sm text-black font-medium">
+                    {currencyFormatter.format(service.price)} · {service.duration} min
+                  </span>
+                </div>
+              </div>
+
+              <CardContent className="p-8 space-y-4">
+                <div>
+                  <h3 className="font-serif text-2xl text-white mb-2">{service.name}</h3>
+                  {service.description ? (
+                    <p className="font-sans text-white/80 leading-relaxed">{service.description}</p>
+                  ) : (
+                    <p className="font-sans text-white/60 leading-relaxed">
+                      Experimenta una sesión personalizada con los mejores productos del estudio.
+                    </p>
+                  )}
+                </div>
+
+                {highlights.length > 0 && (
+                  <ul className="space-y-2">
+                    {highlights.map((feature, idx) => (
+                      <li key={idx} className="flex items-center font-sans text-sm text-white/70">
+                        <div className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full mr-3" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <Button
+                  onClick={() => onNavigateToBooking(service.id)}
+                  className="w-full bg-transparent border border-white text-white hover:bg-white hover:text-black font-sans py-3 rounded-md transition-all duration-300"
+                >
+                  Agendar este servicio
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <section className="py-20 content-layer">
       <div className="container mx-auto px-6">
@@ -55,74 +144,7 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
         </div>
         
         {/* Services Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
-          {services.map((service, index) => (
-            <Card 
-              key={service.id} 
-              className="group luxury-card luxury-hover overflow-hidden rounded-2xl"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              {/* Service Image */}
-              <div className="relative h-72 overflow-hidden">
-                <ImageWithFallback
-                  src={service.image}
-                  alt={service.name}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                  loading="lazy"
-                  decoding="async"
-                  sizes="(min-width: 1024px) 320px, 90vw"
-                  width={640}
-                  height={640}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                
-                {/* Price Badge */}
-                <div className="absolute top-4 right-4 bg-[#D4AF37]/90 backdrop-blur-sm rounded-full px-3 py-1">
-                  <span className="font-sans text-sm text-black font-medium">
-                    Desde {service.priceFrom}
-                  </span>
-                </div>
-              </div>
-              
-              <CardContent className="p-8">
-                {/* Service Title & Duration */}
-                <div className="mb-4">
-                  <h3 className="font-serif text-2xl text-white mb-2">
-                    {service.name}
-                  </h3>
-                  <p className="font-sans text-sm text-[#D4AF37] font-medium">
-                    Duración: {service.duration}
-                  </p>
-                </div>
-                
-                {/* Description */}
-                <p className="font-sans text-white/80 mb-6 leading-relaxed">
-                  {service.description}
-                </p>
-                
-                {/* Features */}
-                <div className="mb-6">
-                  <ul className="space-y-2">
-                    {service.features.map((feature, idx) => (
-                      <li key={idx} className="flex items-center font-sans text-sm text-white/70">
-                        <div className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full mr-3"></div>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                
-                {/* Book Button */}
-                <Button
-                  onClick={() => onNavigateToBooking(service.id)}
-                  className="w-full bg-transparent border border-white text-white hover:bg-white hover:text-black font-sans py-3 rounded-md transition-all duration-300"
-                >
-                  Agendar este servicio
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {renderContent()}
 
         {/* Bottom CTA */}
         <div className="text-center mt-16">

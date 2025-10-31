@@ -6,6 +6,9 @@ export interface Service {
   name: string;
   price: number;
   duration: number;
+  description?: string | null;
+  imageUrl?: string | null;
+  highlights?: string[];
   createdAt: string;
   updatedAt: string;
 }

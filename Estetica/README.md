@@ -33,7 +33,7 @@ VITE_PUBLIC_DASHBOARD_URL=http://localhost:3003
 
 ## Base de datos y Prisma
 Modelos principales (ver `backend/prisma/schema.prisma`):
-- **Service:** `id`, `name`, `price`, `duration`, `createdAt`, `updatedAt`.
+- **Service:** `id`, `name`, `price`, `duration`, `description?`, `imageUrl?`, `highlights[]`, `createdAt`, `updatedAt`.
 - **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status` (`scheduled`, `confirmed`, `done`, `canceled`), `notes`, `createdAt`, `updatedAt`.
 - **Payment:** `id`, `bookingId`, `amount`, `method` (`cash`, `transfer`), `createdAt`.
 - **Product:** `id`, `name`, `price`, `stock`, `lowStockThreshold`, `createdAt`, `updatedAt`.
@@ -73,6 +73,12 @@ npm run dev -- --port 3003
 Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/login` y `/api/logout`). Validaciones con Zod. Cada
 respuesta exitosa sigue el sobre `{ success, message, data }` y replica las propiedades históricas (`services`, `bookings`, etc.)
 para compatibilidad con los clientes existentes.
+
+### Público
+- `GET /api/public/services` → Catálogo abierto ordenado por nombre. Incluye descripción, duración (minutos), precio y
+  `highlights[]` para renderizar la landing.
+- `GET /api/public/events` → Stream SSE (Server-Sent Events) sin autenticación que emite `service:created|updated|deleted` para
+  invalidar datos en el cliente público.
 
 ### Autenticación
 - `POST /api/login` → Body `{ email, password }`. Devuelve `{ token }` (sólo informativo) y envía cookie HttpOnly. Rate limit: 5 intentos/IP/min.
@@ -118,6 +124,10 @@ para compatibilidad con los clientes existentes.
 | PUT | `/api/products/:id` | Actualiza cantidades/precio. |
 | DELETE | `/api/products/:id` | Borra producto. |
 
+### Tiempo real
+- `GET /api/events` → SSE autenticado (`withCredentials`). Emite `service:*`, `booking:*`, `payment:created`,
+  `payments:invalidate`, `product:*` y `stats:invalidate` para que el dashboard refresque automáticamente queries y métricas.
+
 ### Usuarios (sólo ADMIN)
 | Método | Ruta | Descripción |
 | ------ | ---- | ----------- |
@@ -137,7 +147,7 @@ para compatibilidad con los clientes existentes.
 - `GET /api/stats/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD` → `{ series: [{ date: ISOString, amount }] }` para gráficas diarias.
 
 ## Dashboard: módulos y revalidación
-- **Servicios:** CRUD en modales. Actualiza la UI de forma optimista y luego fuerza `invalidateQuery('services')` + `stats` para sincronizar.
+- **Servicios:** CRUD en modales. Actualiza la UI de forma optimista y, gracias al SSE, fuerza la revalidación automática de `services`, métricas y agendas relacionadas.
 - **Citas:** filtros rápidos (hoy, semana, todos) + cambio de estado, edición y borrado. Uso de actualizaciones optimistas y revalidación de todas las variantes (`bookings:time:status`, métricas y gráfica de ingresos).
 - **Pagos:** permite filtrar por fecha, ver total y registrar pagos (afecta `/api/payments`, métricas y gráfica). Formulario validado.
 - **Inventario:** tabla con resalte para stock bajo y filtro rápido. CRUD optimista + revalidación de métricas.

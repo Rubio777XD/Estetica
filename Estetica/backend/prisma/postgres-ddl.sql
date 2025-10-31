@@ -22,6 +22,9 @@ CREATE TABLE "Service" (
     "name" TEXT NOT NULL UNIQUE,
     "price" DOUBLE PRECISION NOT NULL,
     "duration" INTEGER NOT NULL,
+    "description" TEXT,
+    "imageUrl" TEXT,
+    "highlights" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

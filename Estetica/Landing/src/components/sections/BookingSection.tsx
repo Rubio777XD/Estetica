@@ -1,19 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import { Card, CardContent, CardHeader } from "../ui/card";
+import { Card, CardContent } from "../ui/card";
 import { Calendar } from "../ui/calendar";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Badge } from "../ui/badge";
-import { Progress } from "../ui/progress";
 import { CheckCircle, Clock, User, Phone, Mail, Calendar as CalendarIcon } from "lucide-react";
-
-const services = [
-  { id: 'manicure', name: 'Manicure', price: 200, duration: '45-60 min' },
-  { id: 'pedicure', name: 'Pedicure', price: 450, duration: '60-75 min' },
-  { id: 'pestanas', name: 'Extensiones', price: 650, duration: '90-120 min' },
-];
+import { usePublicServices } from "../../lib/services-store";
 
 const timeSlots = [
   '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
@@ -26,6 +18,13 @@ interface BookingSectionProps {
 }
 
 export function BookingSection({ preSelectedService }: BookingSectionProps) {
+  const {
+    services,
+    status: serviceStatus,
+    error: serviceError,
+    refresh: refreshServices,
+  } = usePublicServices();
+  const currencyFormatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedService, setSelectedService] = useState(preSelectedService || '');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -39,7 +38,42 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
 
   const progress = ((currentStep - 1) / 2) * 100;
 
+  const formatDuration = (value?: number | null) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return 'Duración variable';
+    }
+    const hours = Math.floor(value / 60);
+    const minutes = value % 60;
+    if (hours > 0) {
+      return `${hours} h${minutes > 0 ? ` ${minutes} min` : ''}`;
+    }
+    return `${minutes} min`;
+  };
+
+  useEffect(() => {
+    if (!selectedService) {
+      return;
+    }
+    if (!services.some((service) => service.id === selectedService)) {
+      setSelectedService('');
+      setCurrentStep(1);
+    }
+  }, [services, selectedService]);
+
+  useEffect(() => {
+    if (!preSelectedService) {
+      return;
+    }
+    if (services.some((service) => service.id === preSelectedService)) {
+      setSelectedService(preSelectedService);
+      setCurrentStep(2);
+    }
+  }, [preSelectedService, services]);
+
   const handleServiceSelect = (serviceId: string) => {
+    if (!services.some((service) => service.id === serviceId)) {
+      return;
+    }
     setSelectedService(serviceId);
     setCurrentStep(2);
   };
@@ -62,7 +96,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     });
   };
 
-  const selectedServiceData = services.find(s => s.id === selectedService);
+  const selectedServiceData = services.find((service) => service.id === selectedService) || null;
 
   const generateCalendarFile = () => {
     if (!selectedServiceData || !selectedDate || !selectedTime) return;
@@ -76,7 +110,8 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     
     startDate.setHours(hour, parseInt(minutes || '0'));
     
-    const endDate = new Date(startDate.getTime() + 90 * 60000); // 90 minutes
+    const durationMinutes = selectedServiceData?.duration ?? 90;
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
     
     const formatDate = (date: Date) => {
       return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -142,11 +177,13 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-medium-contrast">Duración:</span>
-                    <span className="font-medium text-high-contrast">{selectedServiceData?.duration}</span>
+                    <span className="font-medium text-high-contrast">{formatDuration(selectedServiceData?.duration)}</span>
                   </div>
                   <div className="flex justify-between border-t border-editorial-beige/30 pt-3">
                     <span className="text-medium-contrast">Precio:</span>
-                    <span className="font-medium text-editorial-beige">${selectedServiceData?.price.toLocaleString()}</span>
+                    <span className="font-medium text-editorial-beige">
+                      {selectedServiceData ? currencyFormatter.format(selectedServiceData.price) : '—'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -247,35 +284,77 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                 </h3>
               </div>
               <div className="p-8 pt-0">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {services.map((service) => (
-                    <div
-                      key={service.id}
-                      onClick={() => handleServiceSelect(service.id)}
-                      className={`p-6 rounded-xl border-2 cursor-pointer luxury-transition luxury-hover ${
-                        selectedService === service.id 
-                          ? 'border-editorial-beige bg-editorial-beige/10' 
-                          : 'border-editorial-beige/30 hover:border-editorial-beige'
-                      }`}
-                      style={{
-                        boxShadow: selectedService === service.id 
-                          ? '0 0 20px rgba(234, 220, 199, 0.2)'
-                          : undefined
-                      }}
-                    >
-                      <h4 className="font-heading text-high-contrast mb-2">{service.name}</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm text-medium-contrast">
-                          <Clock className="w-4 h-4 mr-2" />
-                          {service.duration}
-                        </div>
-                        <div className="flex items-center text-sm text-editorial-beige font-medium">
-                          Desde ${service.price.toLocaleString()}
-                        </div>
+                {serviceStatus === 'loading' && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={index} className="p-6 rounded-xl border-2 border-editorial-beige/20 animate-pulse space-y-4">
+                        <div className="h-5 bg-editorial-beige/20 rounded w-2/3" />
+                        <div className="h-4 bg-editorial-beige/10 rounded w-1/2" />
+                        <div className="h-4 bg-editorial-beige/10 rounded w-1/3" />
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
+
+                {serviceStatus === 'error' && (
+                  <div className="text-center space-y-4">
+                    <p className="font-body text-medium-contrast">
+                      {serviceError ?? 'No pudimos cargar el catálogo de servicios.'}
+                    </p>
+                    <Button onClick={() => refreshServices()} variant="outline" className="border-editorial-beige text-editorial-beige hover:bg-editorial-beige hover:text-black">
+                      Reintentar
+                    </Button>
+                  </div>
+                )}
+
+                {serviceStatus === 'success' && services.length === 0 && (
+                  <div className="text-center space-y-3">
+                    <p className="font-body text-medium-contrast">
+                      Aún no hay servicios disponibles para reserva online. Escríbenos para recibir asistencia personalizada.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="border-editorial-beige text-editorial-beige hover:bg-editorial-beige hover:text-black"
+                      onClick={() => window.open('https://wa.me/573001234567', '_blank')}
+                    >
+                      Contactar por WhatsApp
+                    </Button>
+                  </div>
+                )}
+
+                {serviceStatus === 'success' && services.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {services.map((service) => (
+                      <button
+                        key={service.id}
+                        onClick={() => handleServiceSelect(service.id)}
+                        className={`p-6 rounded-xl border-2 text-left luxury-transition luxury-hover ${
+                          selectedService === service.id
+                            ? 'border-editorial-beige bg-editorial-beige/10'
+                            : 'border-editorial-beige/30 hover:border-editorial-beige'
+                        }`}
+                        style={{
+                          boxShadow:
+                            selectedService === service.id
+                              ? '0 0 20px rgba(234, 220, 199, 0.2)'
+                              : undefined,
+                        }}
+                        type="button"
+                      >
+                        <h4 className="font-heading text-high-contrast mb-2">{service.name}</h4>
+                        <div className="space-y-2">
+                          <div className="flex items-center text-sm text-medium-contrast">
+                            <Clock className="w-4 h-4 mr-2" />
+                            {service.duration} min
+                          </div>
+                          <div className="flex items-center text-sm text-editorial-beige font-medium">
+                            {currencyFormatter.format(service.price)}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -457,13 +536,13 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-medium-contrast">Duración:</span>
-                        <span className="font-medium text-high-contrast">{selectedServiceData?.duration}</span>
+                        <span className="font-medium text-high-contrast">{formatDuration(selectedServiceData?.duration)}</span>
                       </div>
                       <div className="border-t border-editorial-beige/30 pt-3">
                         <div className="flex justify-between">
                           <span className="text-medium-contrast">Total:</span>
                           <span className="font-medium text-editorial-beige text-lg">
-                            ${selectedServiceData?.price.toLocaleString()}
+                            {selectedServiceData ? currencyFormatter.format(selectedServiceData.price) : '—'}
                           </span>
                         </div>
                       </div>

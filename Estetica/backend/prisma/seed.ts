@@ -18,11 +18,51 @@ async function main() {
 
   const services = await prisma.$transaction(
     [
-      { name: 'Manicure express', price: 250, duration: 45 },
-      { name: 'Pedicure spa', price: 420, duration: 60 },
-      { name: 'Lash lifting', price: 380, duration: 50 },
-      { name: 'Extensión clásica', price: 680, duration: 120 },
-      { name: 'Diseño en gel', price: 320, duration: 75 },
+      {
+        name: 'Manicure express',
+        price: 250,
+        duration: 45,
+        description: 'Limpieza profunda, limado de precisión y esmaltado de larga duración con acabado brillante.',
+        imageUrl:
+          'https://images.unsplash.com/photo-1521577352947-9bb58764b69a?crop=entropy&cs=tinysrgb&fit=max&fm=webp&w=1080',
+        highlights: ['Limpieza profunda', 'Cutícula cuidada', 'Acabado en gel'],
+      },
+      {
+        name: 'Pedicure spa',
+        price: 420,
+        duration: 60,
+        description: 'Experiencia sensorial con exfoliación, hidratación intensa y masaje relajante.',
+        imageUrl:
+          'https://images.unsplash.com/photo-1600334129128-685c5582fd35?crop=entropy&cs=tinysrgb&fit=max&fm=webp&w=1080',
+        highlights: ['Baño herbal', 'Exfoliación mineral', 'Masaje relajante'],
+      },
+      {
+        name: 'Lash lifting',
+        price: 380,
+        duration: 50,
+        description: 'Realza la curvatura natural de tus pestañas con productos veganos y nutritivos.',
+        imageUrl:
+          'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?crop=entropy&cs=tinysrgb&fit=max&fm=webp&w=1080',
+        highlights: ['Fórmula vegana', 'Efecto hasta 6 semanas', 'Incluye tintado'],
+      },
+      {
+        name: 'Extensión clásica',
+        price: 680,
+        duration: 120,
+        description: 'Aplicación pelo a pelo con fibras premium y diseño personalizado para tu mirada.',
+        imageUrl:
+          'https://images.unsplash.com/photo-1519411540020-496406190771?crop=entropy&cs=tinysrgb&fit=max&fm=webp&w=1080',
+        highlights: ['Fibras hipoalergénicas', 'Mapeo personalizado', 'Incluye kit de cuidado'],
+      },
+      {
+        name: 'Diseño en gel',
+        price: 320,
+        duration: 75,
+        description: 'Manicure artística con gel de alta resistencia y paleta de tendencias de temporada.',
+        imageUrl:
+          'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?crop=entropy&cs=tinysrgb&fit=max&fm=webp&w=1080',
+        highlights: ['Alta definición', 'Pigmentos premium', 'Sellado ultrabrillante'],
+      },
     ].map((service) =>
       prisma.service.upsert({
         where: { name: service.name },

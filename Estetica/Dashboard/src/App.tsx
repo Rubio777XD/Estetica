@@ -15,6 +15,8 @@ import Inventario from './components/Inventario';
 import Citas from './components/Citas';
 import Usuarios from './components/Usuarios';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
+import { API_BASE_URL } from './lib/api';
+import { invalidateQuery, invalidateQueriesMatching } from './lib/data-store';
 
 const LANDING_FALLBACK = (
   import.meta.env.VITE_PUBLIC_LANDING_URL as string | undefined || 'http://localhost:3001/'
@@ -111,6 +113,116 @@ function AppShell() {
       setActiveSection('dashboard');
     }
   }, [activeSection, isAdmin]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return () => undefined;
+    }
+
+    let source: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let attempts = 0;
+    let isMounted = true;
+
+    const handleStats = () => {
+      invalidateQuery('stats-overview');
+      invalidateQueriesMatching('stats-revenue');
+    };
+
+    const cleanupSource = () => {
+      if (source) {
+        source.close();
+        source = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (!isMounted) return;
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
+      const delay = Math.min(30000, 2000 * Math.max(1, attempts));
+      retryTimer = window.setTimeout(() => {
+        attempts += 1;
+        connect();
+      }, delay);
+    };
+
+    const connect = () => {
+      if (!isMounted) {
+        return;
+      }
+
+      cleanupSource();
+
+      const eventSource = new EventSource(`${API_BASE_URL}/api/events`, { withCredentials: true });
+      source = eventSource;
+
+      const handleServiceChange = () => {
+        invalidateQuery('services');
+        invalidateQueriesMatching('bookings:');
+        handleStats();
+      };
+
+      const handleBookingChange = () => {
+        invalidateQueriesMatching('bookings:');
+        invalidateQuery('bookings:for-payments');
+        handleStats();
+      };
+
+      const handlePaymentChange = () => {
+        invalidateQueriesMatching('payments:');
+        invalidateQuery('bookings:for-payments');
+        handleStats();
+      };
+
+      const handleProductChange = () => {
+        invalidateQuery('products');
+        handleStats();
+      };
+
+      eventSource.addEventListener('open', () => {
+        attempts = 0;
+      });
+
+      eventSource.addEventListener('service:created', handleServiceChange);
+      eventSource.addEventListener('service:updated', handleServiceChange);
+      eventSource.addEventListener('service:deleted', handleServiceChange);
+
+      eventSource.addEventListener('booking:created', handleBookingChange);
+      eventSource.addEventListener('booking:updated', handleBookingChange);
+      eventSource.addEventListener('booking:deleted', handleBookingChange);
+      eventSource.addEventListener('booking:status', handleBookingChange);
+
+      eventSource.addEventListener('payment:created', handlePaymentChange);
+      eventSource.addEventListener('payments:invalidate', handlePaymentChange);
+
+      eventSource.addEventListener('product:created', handleProductChange);
+      eventSource.addEventListener('product:updated', handleProductChange);
+      eventSource.addEventListener('product:deleted', handleProductChange);
+
+      eventSource.addEventListener('stats:invalidate', handleStats as EventListener);
+
+      eventSource.onerror = () => {
+        if (!isMounted) {
+          return;
+        }
+        attempts = Math.max(1, attempts);
+        cleanupSource();
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
+      cleanupSource();
+    };
+  }, []);
 
   // Escuchar evento personalizado para navegar a citas
   useEffect(() => {

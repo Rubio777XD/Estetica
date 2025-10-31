@@ -1,6 +1,6 @@
 import type { CookieOptions, Response } from "express";
 
-export const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "salon_session";
+export const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "salon_auth";
 
 const isProduction = process.env.NODE_ENV === "production";
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN;

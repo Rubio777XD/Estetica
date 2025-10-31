@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Menu, X } from "lucide-react";
 import { MiniLoginModal } from "./MiniLoginModal";
@@ -20,7 +20,20 @@ interface LuxuryHeaderProps {
 
 const DASHBOARD_BASE_URL =
   import.meta.env.VITE_PUBLIC_DASHBOARD_URL || "http://localhost:3003";
-const DASHBOARD_URL = `${DASHBOARD_BASE_URL.replace(/\/$/, "")}/`;
+const DASHBOARD_CANONICAL_URL = DASHBOARD_BASE_URL.replace(/\/$/, "");
+const DASHBOARD_URL = `${DASHBOARD_CANONICAL_URL}/`;
+const DASHBOARD_AUTH_URL = (() => {
+  try {
+    const url = new URL(DASHBOARD_URL);
+    url.searchParams.set("auth", "dev");
+    return url.toString();
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn("No fue posible componer la URL del dashboard con auth", error);
+    }
+    return `${DASHBOARD_URL}?auth=dev`;
+  }
+})();
 
 export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -28,6 +41,10 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const goDashboard = useCallback(() => {
+    window.open(DASHBOARD_AUTH_URL, "_self");
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -52,6 +69,16 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn || typeof window === 'undefined') {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth') === 'dev') {
+      goDashboard();
+    }
+  }, [goDashboard, isLoggedIn]);
 
   const handleNavClick = (sectionId: string) => {
     onNavigate(sectionId);
@@ -101,10 +128,6 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
       setPendingSection(null);
       handleNavClick("home");
     }
-  };
-
-  const goDashboard = () => {
-    window.open(DASHBOARD_URL, "_self");
   };
 
   const handleCloseLoginModal = () => {
@@ -180,7 +203,7 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
                 onClick={goDashboard}
                 className="hidden sm:flex items-center justify-center px-4 py-2 text-xs font-medium rounded-full bg-[#EADCC7] text-black hover:opacity-90 transition"
               >
-                Dashboard
+                Ir al Dashboard
               </button>
             )}
 
@@ -261,7 +284,7 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
                       onClick={goDashboard}
                       className="w-full text-center py-3 mt-3 text-sm font-medium rounded-full bg-[#EADCC7] text-black hover:opacity-90 transition"
                     >
-                      Dashboard
+                      Ir al Dashboard
                     </button>
                     <button
                       onClick={handleLogout}

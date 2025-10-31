@@ -60,6 +60,20 @@ export interface ProductsResponse {
   products: Product[];
 }
 
+export type UserRole = 'ADMIN' | 'EMPLOYEE' | 'CLIENT';
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  name?: string | null;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface UsersResponse {
+  users: UserSummary[];
+}
+
 export interface StatsOverviewResponse {
   todayBookings: Record<BookingStatus, number> & {
     scheduled: number;

@@ -3,9 +3,9 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { z } from 'zod';
-import { BookingStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { BookingStatus, PaymentMethod, Prisma, Role } from '@prisma/client';
 
 import { prisma } from './db';
 import { authJWT, AuthedRequest } from './authJWT';
@@ -49,7 +49,29 @@ class HttpError extends Error {
   }
 }
 
-type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+type SuccessBody<T> = {
+  success: true;
+  message: string;
+  data: T;
+} & (T extends Record<string, unknown> ? T : Record<string, never>);
+
+const buildSuccess = <T>(data: T, message = 'Operación exitosa'): SuccessBody<T> => {
+  const base: SuccessBody<T> = {
+    success: true,
+    message,
+    data,
+    ...(typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as Record<string, unknown>) : {}),
+  } as SuccessBody<T>;
+  return base;
+};
+
+const sendSuccess = <T>(res: Response, data: T, message?: string, status = 200) =>
+  res.status(status).json(buildSuccess(data, message));
+
+const sendError = (res: Response, status: number, message: string, details?: unknown) =>
+  res.status(status).json({ success: false, message, data: null, error: message, details: details ?? null });
+
+type AsyncHandler = (req: Request, res: Response, next: NextFunction) => Promise<void | Response>;
 const asyncHandler = (handler: AsyncHandler) => (req: Request, res: Response, next: NextFunction) => {
   handler(req, res, next).catch(next);
 };
@@ -96,8 +118,52 @@ setInterval(() => {
   }
 }, LOGIN_WINDOW_MS).unref();
 
+const DEFAULT_ADMIN_EMAIL = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@local.dev';
+const DEFAULT_ADMIN_NAME = process.env.BOOTSTRAP_ADMIN_NAME || 'Administrador Autogenerado';
+const DEFAULT_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+
+type BootstrapReport = {
+  adminCreated?: { email: string; temporaryPassword?: string };
+  adminEnsured?: { email: string };
+};
+
+const ensureCoreData = async (): Promise<BootstrapReport> => {
+  console.info('[bootstrap] verificando datos esenciales', { expectedRoles: Object.values(Role) });
+
+  const report: BootstrapReport = {};
+  const existingAdmin = await prisma.user.findFirst({ where: { role: Role.ADMIN } });
+  if (!existingAdmin) {
+    const temporaryPassword = DEFAULT_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+
+    const admin = await prisma.user.upsert({
+      where: { email: DEFAULT_ADMIN_EMAIL },
+      update: { role: Role.ADMIN, passwordHash, name: DEFAULT_ADMIN_NAME },
+      create: {
+        email: DEFAULT_ADMIN_EMAIL,
+        passwordHash,
+        name: DEFAULT_ADMIN_NAME,
+        role: Role.ADMIN,
+      },
+    });
+
+    report.adminCreated = {
+      email: admin.email,
+      temporaryPassword: DEFAULT_ADMIN_PASSWORD ? undefined : temporaryPassword,
+    };
+  } else {
+    report.adminEnsured = { email: existingAdmin.email };
+  }
+
+  return report;
+};
+
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'estetica-api', env: process.env.NODE_ENV ?? 'development' });
+  return sendSuccess(
+    res,
+    { ok: true, service: 'estetica-api', env: process.env.NODE_ENV ?? 'development' },
+    'API operativa'
+  );
 });
 
 const loginSchema = z.object({
@@ -140,21 +206,28 @@ app.post(
     setSessionCookie(res, token);
     loginAttempts.delete(clientIdentifier);
     console.info('[auth] login success', { emailHash: hashedEmail, ip: clientIdentifier });
-    res.json({ token });
+    return sendSuccess(res, { token }, 'Inicio de sesión exitoso');
   })
 );
 
 app.get('/api/me', authJWT, (req: AuthedRequest, res) => {
-  res.json({ user: req.user });
+  return sendSuccess(res, { user: req.user }, 'Sesión válida');
 });
 
 app.post('/api/logout', (_req, res) => {
   clearSessionCookie(res);
-  res.status(204).end();
+  return sendSuccess(res, { loggedOut: true }, 'Sesión finalizada');
 });
 
 const protectedRouter = express.Router();
 protectedRouter.use(authJWT);
+
+const requireRole = (role: Role) => (req: AuthedRequest, _res: Response, next: NextFunction) => {
+  if (req.user?.role !== role) {
+    throw new HttpError(403, 'Acceso restringido');
+  }
+  next();
+};
 
 // Services CRUD
 const serviceSchema = z.object({
@@ -169,7 +242,7 @@ protectedRouter.get(
     const services = await prisma.service.findMany({
       orderBy: { name: 'asc' },
     });
-    res.json({ services });
+    return sendSuccess(res, { services }, 'Servicios obtenidos');
   })
 );
 
@@ -183,7 +256,7 @@ protectedRouter.post(
 
     try {
       const service = await prisma.service.create({ data: result.data });
-      res.status(201).json({ service });
+      return sendSuccess(res, { service }, 'Servicio creado', 201);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new HttpError(409, 'Ya existe un servicio con ese nombre');
@@ -208,7 +281,7 @@ protectedRouter.put(
 
     try {
       const service = await prisma.service.update({ where: { id: req.params.id }, data: result.data });
-      res.json({ service });
+      return sendSuccess(res, { service }, 'Servicio actualizado');
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new HttpError(409, 'Ya existe un servicio con ese nombre');
@@ -234,7 +307,7 @@ protectedRouter.delete(
       }
       throw error;
     }
-    res.status(204).end();
+    return sendSuccess(res, { deleted: true }, 'Servicio eliminado');
   })
 );
 
@@ -303,7 +376,7 @@ protectedRouter.get(
       take: limit ?? 100,
     });
 
-    res.json({ bookings });
+    return sendSuccess(res, { bookings }, 'Citas recuperadas');
   })
 );
 
@@ -343,7 +416,7 @@ protectedRouter.post(
       include: { service: true, payments: true },
     });
 
-    res.status(201).json({ booking });
+    return sendSuccess(res, { booking }, 'Cita creada', 201);
   })
 );
 
@@ -389,7 +462,7 @@ protectedRouter.put(
       include: { service: true, payments: true },
     });
 
-    res.json({ booking });
+    return sendSuccess(res, { booking }, 'Cita actualizada');
   })
 );
 
@@ -412,7 +485,7 @@ protectedRouter.patch(
       include: { service: true, payments: true },
     });
 
-    res.json({ booking });
+    return sendSuccess(res, { booking }, 'Estado actualizado');
   })
 );
 
@@ -424,7 +497,7 @@ protectedRouter.delete(
     } catch (error) {
       throw new HttpError(404, 'Cita no encontrada');
     }
-    res.status(204).end();
+    return sendSuccess(res, { deleted: true }, 'Cita eliminada');
   })
 );
 
@@ -474,7 +547,7 @@ protectedRouter.get(
     });
 
     const totalAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
-    res.json({ payments, totalAmount });
+    return sendSuccess(res, { payments, totalAmount }, 'Pagos recuperados');
   })
 );
 
@@ -496,7 +569,7 @@ protectedRouter.post(
       include: { booking: { include: { service: true } } },
     });
 
-    res.status(201).json({ payment });
+    return sendSuccess(res, { payment }, 'Pago registrado', 201);
   })
 );
 
@@ -512,7 +585,7 @@ protectedRouter.get(
   '/products',
   asyncHandler(async (_req, res) => {
     const products = await prisma.product.findMany({ orderBy: { name: 'asc' } });
-    res.json({ products });
+    return sendSuccess(res, { products }, 'Inventario recuperado');
   })
 );
 
@@ -523,7 +596,7 @@ protectedRouter.get(
     const lowStock = products
       .filter((product) => product.stock <= product.lowStockThreshold)
       .sort((a, b) => a.stock - b.stock);
-    res.json({ products: lowStock });
+    return sendSuccess(res, { products: lowStock }, 'Productos con poco stock');
   })
 );
 
@@ -536,7 +609,7 @@ protectedRouter.post(
     }
 
     const product = await prisma.product.create({ data: result.data });
-    res.status(201).json({ product });
+    return sendSuccess(res, { product }, 'Producto creado', 201);
   })
 );
 
@@ -554,7 +627,7 @@ protectedRouter.put(
     }
 
     const product = await prisma.product.update({ where: { id: req.params.id }, data: result.data });
-    res.json({ product });
+    return sendSuccess(res, { product }, 'Producto actualizado');
   })
 );
 
@@ -569,7 +642,63 @@ protectedRouter.delete(
       }
       throw error;
     }
-    res.status(204).end();
+    return sendSuccess(res, { deleted: true }, 'Producto eliminado');
+  })
+);
+
+const userCreateSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  name: z.string().trim().min(1).max(120).optional(),
+  role: z.nativeEnum(Role),
+});
+
+protectedRouter.get(
+  '/users',
+  requireRole(Role.ADMIN),
+  asyncHandler(async (_req, res) => {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+    return sendSuccess(res, { users }, 'Usuarios recuperados');
+  })
+);
+
+protectedRouter.post(
+  '/users',
+  requireRole(Role.ADMIN),
+  asyncHandler(async (req, res) => {
+    const parsed = userCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
+    }
+
+    const { email, password, name, role } = parsed.data;
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new HttpError(409, 'El correo ya está registrado');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name,
+        role,
+      },
+      select: { id: true, email: true, name: true, role: true, createdAt: true },
+    });
+
+    return sendSuccess(res, { user }, 'Usuario creado', 201);
   })
 );
 
@@ -621,7 +750,7 @@ protectedRouter.get(
     const lowStockProducts = await prisma.product.findMany();
     const lowStockCount = lowStockProducts.filter((product) => product.stock <= product.lowStockThreshold).length;
 
-    res.json({
+    return sendSuccess(res, {
       todayBookings: todayCounts,
       monthlyRevenue: payments._sum.amount ?? 0,
       topServices: topServices.map((item) => ({
@@ -673,7 +802,7 @@ protectedRouter.get(
       .sort(([a], [b]) => (a > b ? 1 : a < b ? -1 : 0))
       .map(([dateKey, amount]) => ({ date: parseDateOnly(dateKey).toISOString(), amount }));
 
-    res.json({ series });
+    return sendSuccess(res, { series }, 'Serie de ingresos');
   })
 );
 
@@ -681,16 +810,33 @@ app.use('/api', protectedRouter);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof HttpError) {
-    return res.status(err.status).json({ error: err.message, details: err.details ?? null });
+    return sendError(res, err.status, err.message, err.details);
   }
 
   if (err instanceof z.ZodError) {
-    return res.status(400).json({ error: 'Validación inválida', details: err.flatten() });
+    return sendError(res, 400, 'Validación inválida', err.flatten());
   }
 
   console.error('[api] unhandled error', err);
-  return res.status(500).json({ error: 'Error inesperado' });
+  return sendError(res, 500, 'Error inesperado');
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => console.log(`✅ API server ready on port ${port}`));
+
+const startServer = async () => {
+  try {
+    const report = await ensureCoreData();
+    if (report.adminCreated) {
+      console.info('[bootstrap] administrador creado', report.adminCreated);
+    } else if (report.adminEnsured) {
+      console.info('[bootstrap] administrador existente', report.adminEnsured);
+    }
+
+    app.listen(port, () => console.log(`✅ API server ready on port ${port}`));
+  } catch (error) {
+    console.error('[bootstrap] No fue posible inicializar el servidor', error);
+    process.exit(1);
+  }
+};
+
+void startServer();

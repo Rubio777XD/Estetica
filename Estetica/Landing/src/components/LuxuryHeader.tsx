@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Menu, X } from "lucide-react";
 import { MiniLoginModal } from "./MiniLoginModal";
-import { fetchMe, logout as clearSession } from "../lib/auth";
+import { fetchMe, logout } from "../lib/auth";
 
 const navigationItems = [
   { id: "home", label: "Home" },
@@ -20,13 +20,14 @@ interface LuxuryHeaderProps {
 
 const DASHBOARD_BASE_URL =
   import.meta.env.VITE_PUBLIC_DASHBOARD_URL || "http://localhost:3003";
-const DASHBOARD_URL = `${DASHBOARD_BASE_URL.replace(/\/$/, "")}/?auth=dev`;
+const DASHBOARD_URL = `${DASHBOARD_BASE_URL.replace(/\/$/, "")}/`;
 
 export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -85,11 +86,21 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
     setPendingSection(null);
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    clearSession();
-    setPendingSection(null);
-    handleNavClick("home");
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn("No fue posible cerrar sesión desde la landing", error);
+      }
+    } finally {
+      setIsLoggingOut(false);
+      setIsLoggedIn(false);
+      setPendingSection(null);
+      handleNavClick("home");
+    }
   };
 
   const goDashboard = () => {
@@ -115,6 +126,10 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
               src="/assets/logo.jfif"
               alt="Studio AR"
               className="h-8 w-8 rounded-full object-cover"
+              width={32}
+              height={32}
+              loading="eager"
+              decoding="async"
             />
             <span className="sr-only">Studio AR</span>
           </div>
@@ -184,8 +199,9 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
               <button
                 onClick={handleLogout}
                 className="hidden sm:block text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                disabled={isLoggingOut}
               >
-                Salir
+                {isLoggingOut ? "Saliendo…" : "Salir"}
               </button>
             )}
 
@@ -250,8 +266,9 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
                     <button
                       onClick={handleLogout}
                       className="w-full text-center py-2 mt-2 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                      disabled={isLoggingOut}
                     >
-                      Cerrar Sesión
+                      {isLoggingOut ? "Cerrando…" : "Cerrar Sesión"}
                     </button>
                   </>
                 )}

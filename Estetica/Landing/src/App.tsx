@@ -1,13 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { LuxuryHeader } from "./components/LuxuryHeader";
 import { HomeSection } from "./components/sections/HomeSection";
-import { ServicesSection } from "./components/sections/ServicesSection";
-import { BookingSection } from "./components/sections/BookingSection";
-import { AboutSection } from "./components/sections/AboutSection";
-import { GallerySection } from "./components/sections/GallerySection";
-import { ContactSection } from "./components/sections/ContactSection";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { LuxuryFooter } from "./components/LuxuryFooter";
+
+const ServicesSection = lazy(() =>
+  import("./components/sections/ServicesSection").then((module) => ({ default: module.ServicesSection }))
+);
+const BookingSection = lazy(() =>
+  import("./components/sections/BookingSection").then((module) => ({ default: module.BookingSection }))
+);
+const AboutSection = lazy(() =>
+  import("./components/sections/AboutSection").then((module) => ({ default: module.AboutSection }))
+);
+const GallerySection = lazy(() =>
+  import("./components/sections/GallerySection").then((module) => ({ default: module.GallerySection }))
+);
+const ContactSection = lazy(() =>
+  import("./components/sections/ContactSection").then((module) => ({ default: module.ContactSection }))
+);
 
 const sections = [
   { id: 'home', component: 'home' },
@@ -17,6 +28,14 @@ const sections = [
   { id: 'galeria', component: 'galeria' },
   { id: 'contacto', component: 'contacto' }
 ];
+
+const SectionFallback = () => (
+  <div className="py-20 content-layer">
+    <div className="container mx-auto px-6">
+      <div className="h-48 rounded-3xl bg-white/10 animate-pulse" />
+    </div>
+  </div>
+);
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('home');
@@ -162,7 +181,9 @@ export default function App() {
       
       {/* Main Content */}
       <main className="pt-16 min-h-screen">
-        {renderSection()}
+        <Suspense fallback={<SectionFallback />}>
+          {renderSection()}
+        </Suspense>
       </main>
       
       {/* Footer - only show on contact section or desktop */}

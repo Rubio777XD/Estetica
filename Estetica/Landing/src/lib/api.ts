@@ -3,29 +3,6 @@ const DEFAULT_API_URL = "http://localhost:3000";
 const rawUrl = (import.meta.env?.VITE_API_URL as string | undefined) || DEFAULT_API_URL;
 export const API_BASE_URL = rawUrl.replace(/\/$/, "");
 
-const STORAGE_KEY = "salon_auth";
-
-const isBrowser = typeof window !== "undefined";
-
-const getStoredToken = (): string | null => {
-  if (!isBrowser) return null;
-  try {
-    return window.localStorage.getItem(STORAGE_KEY);
-  } catch (error) {
-    console.warn("No fue posible leer salon_auth desde localStorage", error);
-    return null;
-  }
-};
-
-const clearStoredToken = () => {
-  if (!isBrowser) return;
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch (error) {
-    console.warn("No fue posible limpiar salon_auth desde localStorage", error);
-  }
-};
-
 export const apiFetch = async <T = unknown>(path: string, options: RequestInit = {}): Promise<T> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -39,20 +16,12 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestInit =
 
     headers.set("Accept", "application/json");
 
-    const token = getStoredToken();
-    if (token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       headers,
       signal: controller.signal,
+      credentials: options.credentials ?? "include",
     });
-
-    if (response.status === 401) {
-      clearStoredToken();
-    }
 
     if (!response.ok) {
       let errorMessage = `Error ${response.status}`;
@@ -77,5 +46,3 @@ export const apiFetch = async <T = unknown>(path: string, options: RequestInit =
     clearTimeout(timeout);
   }
 };
-
-export { STORAGE_KEY as AUTH_STORAGE_KEY, getStoredToken, clearStoredToken };

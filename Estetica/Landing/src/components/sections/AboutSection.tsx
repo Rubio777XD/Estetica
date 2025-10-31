@@ -108,6 +108,11 @@ export function AboutSection() {
                 src="/assets/ibeth1.png"
                 alt="Ibeth Rentería - Fundadora de Studio AR"
                 className="w-full rounded-2xl object-cover object-top lg:h-[520px]"
+                loading="lazy"
+                decoding="async"
+                sizes="(min-width: 1024px) 480px, 100vw"
+                width={960}
+                height={640}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
             </div>

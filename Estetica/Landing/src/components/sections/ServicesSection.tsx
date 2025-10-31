@@ -19,7 +19,7 @@ const services = [
     features: ['Exfoliación profunda', 'Masaje terapéutico', 'Hidratación intensiva'],
     priceFrom: '$200',
     duration: '60-75 min',
-    image: "https://images.unsplash.com/photo-1675034743433-bdc9aee1cafc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBwZWRpY3VyZSUyMHNwYSUyMHRyZWF0bWVudHxlbnwxfHx8fDE3NTcwNDUyMzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+    image: "https://images.unsplash.com/photo-1675034743433-bdc9aee1cafc?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBwZWRpY3VyZSUyMHNwYSUyMHRyZWF0bWVudHxlbnwxfHx8fDE3NTcwNDUyMzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
   },
   {
     id: 'pestanas',
@@ -28,7 +28,7 @@ const services = [
     features: ['Técnica volumen ruso', 'Pestañas premium', 'Duración 3-4 semanas'],
     priceFrom: '$200',
     duration: '90-120 min',
-    image: "https://images.unsplash.com/photo-1645735123314-d11fcfdd0000?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleWVsYXNoJTIwZXh0ZW5zaW9uJTIwYmVhdXR5JTIwbHV4dXJ5fGVufDF8fHx8MTc1NzA0NTIzOXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+    image: "https://images.unsplash.com/photo-1645735123314-d11fcfdd0000?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleWVsYXNoJTIwZXh0ZW5zaW9uJTIwYmVhdXR5JTIwbHV4dXJ5fGVufDF8fHx8MTc1NzA0NTIzOXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
   }
 ];
 
@@ -64,10 +64,15 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
             >
               {/* Service Image */}
               <div className="relative h-72 overflow-hidden">
-                <ImageWithFallback 
+                <ImageWithFallback
                   src={service.image}
                   alt={service.name}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                  loading="lazy"
+                  decoding="async"
+                  sizes="(min-width: 1024px) 320px, 90vw"
+                  width={640}
+                  height={640}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 

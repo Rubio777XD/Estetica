@@ -164,6 +164,10 @@ export function HomeSection({ onNavigate }: HomeSectionProps) {
                     src={currentData.image}
                     alt="Salón de Belleza AR - Ibeth Rentería"
                     className="w-full h-full object-cover transition-all duration-[350ms] ease-out"
+                    loading="eager"
+                    fetchPriority="high"
+                    decoding="async"
+                    sizes="(min-width: 1024px) 480px, 70vw"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
                 </div>

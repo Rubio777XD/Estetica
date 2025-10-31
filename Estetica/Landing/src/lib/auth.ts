@@ -1,4 +1,4 @@
-import { apiFetch, API_BASE_URL, AUTH_STORAGE_KEY, getStoredToken, clearStoredToken } from "./api";
+import { apiFetch, API_BASE_URL } from "./api";
 
 interface LoginResponse {
   token: string;
@@ -13,17 +13,6 @@ interface MeResponse {
   };
 }
 
-const isBrowser = typeof window !== "undefined";
-
-const persistToken = (token: string) => {
-  if (!isBrowser) return;
-  try {
-    window.localStorage.setItem(AUTH_STORAGE_KEY, token);
-  } catch (error) {
-    console.warn("No fue posible guardar salon_auth en localStorage", error);
-  }
-};
-
 export const login = async (email: string, password: string): Promise<string> => {
   const response = await fetch(`${API_BASE_URL}/api/login`, {
     method: "POST",
@@ -32,11 +21,8 @@ export const login = async (email: string, password: string): Promise<string> =>
       Accept: "application/json",
     },
     body: JSON.stringify({ email, password }),
+    credentials: "include",
   });
-
-  if (response.status === 401) {
-    clearStoredToken();
-  }
 
   if (!response.ok) {
     let errorMessage = "No fue posible iniciar sesión";
@@ -52,20 +38,10 @@ export const login = async (email: string, password: string): Promise<string> =>
   }
 
   const data = (await response.json()) as LoginResponse;
-  if (!data?.token) {
-    throw new Error("Respuesta de login inválida");
-  }
-
-  persistToken(data.token);
-  return data.token;
+  return data?.token ?? "";
 };
 
 export const fetchMe = async (): Promise<MeResponse["user"]> => {
-  const token = getStoredToken();
-  if (!token) {
-    throw new Error("Sesión no disponible");
-  }
-
   const data = await apiFetch<MeResponse>("/api/me");
   if (!data?.user) {
     throw new Error("No se pudo obtener el usuario");
@@ -73,6 +49,12 @@ export const fetchMe = async (): Promise<MeResponse["user"]> => {
   return data.user;
 };
 
-export const logout = () => {
-  clearStoredToken();
+export const logout = async (): Promise<void> => {
+  try {
+    await apiFetch("/api/logout", { method: "POST" });
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn("No fue posible cerrar la sesión de forma remota", error);
+    }
+  }
 };

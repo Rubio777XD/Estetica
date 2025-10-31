@@ -15,7 +15,7 @@ const mockReviews: Review[] = [
   {
     id: '1',
     name: 'María González',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b38671d4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b38671d4?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=512',
     rating: 5,
     date: 'Hace 2 semanas',
     comment: 'Ibeth es increíble! Sus extensiones de pestañas duran muchísimo y se ven súper naturales. El ambiente del salón es muy relajante.'
@@ -23,7 +23,7 @@ const mockReviews: Review[] = [
   {
     id: '2',
     name: 'Ana Sofia Torres',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwyfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwyfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=512',
     rating: 5,
     date: 'Hace 1 mes',
     comment: 'El mejor pedicure que me han hecho en mi vida. Ibeth tiene una técnica impecable y usa productos de excelente calidad. 100% recomendado.'
@@ -31,7 +31,7 @@ const mockReviews: Review[] = [
   {
     id: '3',
     name: 'Carolina Ruiz',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwzfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwzfHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=512',
     rating: 5,
     date: 'Hace 3 semanas',
     comment: 'Las manicures de Ibeth son arte puro. Siempre salgo feliz y mis uñas se ven perfectas. Es mi lugar favorito para consentirme.'
@@ -39,7 +39,7 @@ const mockReviews: Review[] = [
   {
     id: '4',
     name: 'Isabella Vargas',
-    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHw0fHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    avatar: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHw0fHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=512',
     rating: 5,
     date: 'Hace 5 días',
     comment: 'Profesionalismo y calidad excepcional. Ibeth es muy detallista y siempre logra exactamente lo que quiero. El salón es hermoso y muy limpio.'
@@ -47,7 +47,7 @@ const mockReviews: Review[] = [
   {
     id: '5',
     name: 'Valentina Mora',
-    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHw1fHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=1080',
+    avatar: 'https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?crop=entropy&cs=tinysrgb&fit=max&fm=webp&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHw1fHx3b21hbiUyMHBvcnRyYWl0JTIwc21pbGV8ZW58MXx8fHwxNzU3Mjg0MTI5fDA&ixlib=rb-4.1.0&q=80&w=512',
     rating: 5,
     date: 'Hace 1 semana',
     comment: 'Experiencia 5 estrellas! Ibeth no solo es experta en su trabajo, sino que también te hace sentir como en casa. Volveré sin duda.'
@@ -210,6 +210,10 @@ export function ReviewsCarousel({ className = '' }: ReviewsCarouselProps) {
                         src={review.avatar}
                         alt={review.name}
                         className="w-12 h-12 rounded-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        width={96}
+                        height={96}
                       />
                     </div>
                     

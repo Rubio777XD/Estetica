@@ -1,5 +1,5 @@
 import { PropsWithChildren, useEffect, useState } from 'react';
-import { Calendar, Users, Scissors, CreditCard, Package, BookOpen, Home, Settings } from 'lucide-react';
+import { Calendar, Users, Scissors, CreditCard, Package, BookOpen, Home, Settings, LogOut } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -13,7 +13,7 @@ import Servicios from './components/Servicios';
 import Pagos from './components/Pagos';
 import Inventario from './components/Inventario';
 import Citas from './components/Citas';
-import { dropSession, ensureSession } from './lib/auth';
+import { ensureSession, logout as remoteLogout } from './lib/auth';
 
 const LANDING_FALLBACK = (
   import.meta.env.VITE_PUBLIC_LANDING_URL as string | undefined || 'http://localhost:3001/'
@@ -32,7 +32,7 @@ function AuthGuard({ children }: PropsWithChildren) {
           setStatus('ready');
         }
       } catch (error) {
-        dropSession();
+        await remoteLogout();
         if (typeof window !== 'undefined') {
           window.location.replace(LANDING_FALLBACK);
         }
@@ -71,6 +71,7 @@ const menuItems = [
 function AppShell() {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Escuchar evento personalizado para navegar a citas
   useEffect(() => {
@@ -80,6 +81,23 @@ function AppShell() {
     window.addEventListener('navigate-to-citas', handleNavigateToCitas);
     return () => window.removeEventListener('navigate-to-citas', handleNavigateToCitas);
   }, []);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await remoteLogout();
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('No fue posible cerrar la sesión desde el panel', error);
+      }
+    } finally {
+      setIsLoggingOut(false);
+      if (typeof window !== 'undefined') {
+        window.location.replace(LANDING_FALLBACK);
+      }
+    }
+  };
 
   const renderContent = () => {
     switch (activeSection) {
@@ -165,13 +183,22 @@ function AppShell() {
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                 Sistema Activo
               </Badge>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setConfigDialogOpen(true)}
               >
                 <Settings className="h-4 w-4 mr-2" />
                 Configuración
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                {isLoggingOut ? 'Cerrando…' : 'Cerrar sesión'}
               </Button>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "./ui/button";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface CarouselItem {
   id: number;
@@ -165,11 +166,16 @@ export function LuxuryCarousel({
                     key={item.id}
                     className="group relative overflow-hidden rounded-lg luxury-border luxury-transition luxury-hover"
                   >
-                    <img 
+                    <ImageWithFallback
                       src={item.image}
                       alt={item.title}
                       className="w-full h-64 object-cover group-hover:scale-110 luxury-transition"
                       draggable={false}
+                      loading="lazy"
+                      decoding="async"
+                      sizes="(min-width: 1024px) 320px, 90vw"
+                      width={640}
+                      height={512}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0B0B0B]/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 luxury-transition">
                       <div className="absolute bottom-4 left-4 right-4">

@@ -1,4 +1,4 @@
-import { apiFetch, clearStoredToken, getStoredToken } from "./api";
+import { apiFetch } from "./api";
 
 interface MeResponse {
   user: {
@@ -10,11 +10,6 @@ interface MeResponse {
 }
 
 export const ensureSession = async (): Promise<MeResponse["user"]> => {
-  const token = getStoredToken();
-  if (!token) {
-    throw new Error("Token no disponible");
-  }
-
   const response = await apiFetch<MeResponse>("/api/me");
   if (!response?.user) {
     throw new Error("No fue posible validar la sesión");
@@ -22,6 +17,12 @@ export const ensureSession = async (): Promise<MeResponse["user"]> => {
   return response.user;
 };
 
-export const dropSession = () => {
-  clearStoredToken();
+export const logout = async (): Promise<void> => {
+  try {
+    await apiFetch("/api/logout", { method: "POST" });
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn("No fue posible cerrar sesión desde el dashboard", error);
+    }
+  }
 };

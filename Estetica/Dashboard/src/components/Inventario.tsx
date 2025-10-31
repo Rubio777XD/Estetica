@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Package, AlertTriangle, Plus, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
@@ -247,95 +247,108 @@ export default function Inventario() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={showLowStockOnly ? 'default' : 'outline'}
-            onClick={() => setShowLowStockOnly((prev) => !prev)}
-            className={showLowStockOnly ? 'bg-black text-white' : ''}
-          >
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            {showLowStockOnly ? 'Ver todo el inventario' : 'Mostrar stock bajo'}
-          </Button>
-          <span className="text-sm text-gray-600">{lowStockProducts.length} productos con stock bajo</span>
-        </div>
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) {
-              resetForm();
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button className="bg-black hover:bg-gray-900">
-              <Plus className="h-4 w-4 mr-2" /> Nuevo producto
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <DialogTitle>Registrar producto</DialogTitle>
-              <DialogDescription>Agrega un producto al inventario para monitorear su disponibilidad.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="product-name">Nombre</Label>
-                <Input
-                  id="product-name"
-                  value={form.name}
-                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                  placeholder="Removedor de esmalte"
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="product-price">Precio</Label>
-                  <Input
-                    id="product-price"
-                    type="number"
-                    min="0"
-                    step="10"
-                    value={form.price}
-                    onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-stock">Stock</Label>
-                  <Input
-                    id="product-stock"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.stock}
-                    onChange={(event) => setForm((prev) => ({ ...prev, stock: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="product-low">Umbral</Label>
-                  <Input
-                    id="product-low"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.lowStockThreshold}
-                    onChange={(event) => setForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancelar
+    <div className="space-y-6 max-w-6xl mx-auto w-full">
+      <Card className="shadow-sm">
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={showLowStockOnly ? 'default' : 'outline'}
+                  onClick={() => setShowLowStockOnly((prev) => !prev)}
+                  className={`${showLowStockOnly ? 'bg-black text-white' : ''} whitespace-nowrap`}
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  {showLowStockOnly ? 'Ver todo el inventario' : 'Mostrar stock bajo'}
                 </Button>
-                <Button onClick={handleCreateProduct} disabled={!isFormValid || isSubmitting}>
-                  Guardar
-                </Button>
+                <span className="text-sm text-gray-600">
+                  {lowStockProducts.length} productos con stock bajo
+                </span>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+            <Dialog
+              open={dialogOpen}
+              onOpenChange={(open) => {
+                setDialogOpen(open);
+                if (!open) {
+                  resetForm();
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button className="bg-black hover:bg-gray-900 whitespace-nowrap">
+                  <Plus className="h-4 w-4 mr-2" /> Nuevo producto
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>Registrar producto</DialogTitle>
+                  <DialogDescription>
+                    Agrega un producto al inventario para monitorear su disponibilidad.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="product-name">Nombre</Label>
+                    <Input
+                      id="product-name"
+                      value={form.name}
+                      onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                      placeholder="Removedor de esmalte"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="product-price">Precio</Label>
+                      <Input
+                        id="product-price"
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={form.price}
+                        onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="product-stock">Stock</Label>
+                      <Input
+                        id="product-stock"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={form.stock}
+                        onChange={(event) => setForm((prev) => ({ ...prev, stock: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="product-low">Umbral</Label>
+                      <Input
+                        id="product-low"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={form.lowStockThreshold}
+                        onChange={(event) => setForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleCreateProduct} disabled={!isFormValid || isSubmitting}>
+                      Guardar
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {renderContent()}
+        </CardContent>
+      </Card>
 
       <Dialog
         open={editDialogOpen}
@@ -406,8 +419,6 @@ export default function Inventario() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {renderContent()}
     </div>
   );
 }

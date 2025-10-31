@@ -1,5 +1,6 @@
 export type BookingStatus = 'scheduled' | 'confirmed' | 'done' | 'canceled';
 export type PaymentMethod = 'cash' | 'transfer';
+export type AssignmentStatus = 'pending' | 'accepted' | 'declined' | 'expired';
 
 export interface Service {
   id: string;
@@ -21,10 +22,23 @@ export interface Booking {
   endTime: string;
   status: BookingStatus;
   notes?: string | null;
+  assignedEmail?: string | null;
+  assignedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   service: Service;
   payments?: Payment[];
+  assignments?: Assignment[];
+}
+
+export interface Assignment {
+  id: string;
+  bookingId: string;
+  email: string;
+  status: AssignmentStatus;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Payment {
@@ -54,6 +68,10 @@ export interface BookingsResponse {
   bookings: Booking[];
 }
 
+export interface UnassignedBookingsResponse {
+  bookings: Booking[];
+}
+
 export interface PaymentsResponse {
   payments: (Payment & { booking: Booking & { service: Service } })[];
   totalAmount: number;
@@ -63,7 +81,7 @@ export interface ProductsResponse {
   products: Product[];
 }
 
-export type UserRole = 'ADMIN' | 'EMPLOYEE' | 'CLIENT';
+export type UserRole = 'ADMIN' | 'EMPLOYEE';
 
 export interface UserSummary {
   id: string;

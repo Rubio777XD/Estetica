@@ -1,5 +1,16 @@
 import { PropsWithChildren, useEffect, useState } from 'react';
-import { Calendar, Users, Scissors, CreditCard, Package, BookOpen, Home, Settings, LogOut } from 'lucide-react';
+import {
+  Calendar,
+  CalendarClock,
+  Users,
+  Scissors,
+  CreditCard,
+  Package,
+  BookOpen,
+  Home,
+  Settings,
+  LogOut,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -13,6 +24,7 @@ import Servicios from './components/Servicios';
 import Pagos from './components/Pagos';
 import Inventario from './components/Inventario';
 import Citas from './components/Citas';
+import CitasPendientes from './components/CitasPendientes';
 import Usuarios from './components/Usuarios';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
 import { API_BASE_URL } from './lib/api';
@@ -79,6 +91,7 @@ function AuthGuard({ children }: PropsWithChildren) {
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
   { id: 'citas', label: 'Citas', icon: Calendar },
+  { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
   { id: 'servicios', label: 'Servicios', icon: Scissors },
   { id: 'pagos', label: 'Pagos & Comisiones', icon: CreditCard },
   { id: 'inventario', label: 'Inventario', icon: Package },
@@ -170,6 +183,11 @@ function AppShell() {
         handleStats();
       };
 
+      const handleAssignmentChange = () => {
+        invalidateQuery('bookings:pending');
+        invalidateQueriesMatching('bookings:');
+      };
+
       const handlePaymentChange = () => {
         invalidateQueriesMatching('payments:');
         invalidateQuery('bookings:for-payments');
@@ -193,6 +211,10 @@ function AppShell() {
       eventSource.addEventListener('booking:updated', handleBookingChange);
       eventSource.addEventListener('booking:deleted', handleBookingChange);
       eventSource.addEventListener('booking:status', handleBookingChange);
+      eventSource.addEventListener('booking:assignment:sent', handleAssignmentChange);
+      eventSource.addEventListener('booking:assignment:accepted', handleAssignmentChange);
+      eventSource.addEventListener('booking:assignment:expired', handleAssignmentChange);
+      eventSource.addEventListener('booking:assignment:cancelled', handleAssignmentChange);
 
       eventSource.addEventListener('payment:created', handlePaymentChange);
       eventSource.addEventListener('payments:invalidate', handlePaymentChange);
@@ -256,6 +278,8 @@ function AppShell() {
         return <Dashboard />;
       case 'citas':
         return <Citas />;
+      case 'citas-pendientes':
+        return <CitasPendientes />;
       case 'servicios':
         return <Servicios />;
       case 'pagos':

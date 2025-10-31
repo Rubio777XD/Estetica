@@ -9,6 +9,7 @@ import {
   PenSquare,
   Trash2,
   Loader2,
+  AtSign,
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
@@ -401,6 +402,17 @@ export default function Citas() {
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
+                <Badge
+                  variant="outline"
+                  className={`${
+                    booking.assignedEmail
+                      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                      : 'bg-gray-100 text-gray-600 border-gray-200'
+                  } flex items-center gap-1`}
+                >
+                  <AtSign className="h-3.5 w-3.5" />
+                  {booking.assignedEmail ? `Asignada a ${booking.assignedEmail}` : 'No asignada'}
+                </Badge>
                 <Badge variant="outline" className={STATUS_VARIANTS[booking.status]}>
                   {STATUS_LABELS[booking.status]}
                 </Badge>

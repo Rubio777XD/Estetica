@@ -46,6 +46,19 @@ function AuthGuard({ children }: PropsWithChildren) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleUnauthorized = async () => {
+      await remoteLogout().catch(() => undefined);
+      if (typeof window !== 'undefined') {
+        window.location.replace(LANDING_FALLBACK);
+      }
+    };
+    window.addEventListener('dashboard:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('dashboard:unauthorized', handleUnauthorized);
+    };
+  }, []);
+
   if (status === 'checking') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
@@ -72,6 +85,21 @@ function AppShell() {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ email: string; name?: string | null; role?: string | null } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    ensureSession()
+      .then((user) => {
+        if (mounted) {
+          setCurrentUser(user);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Escuchar evento personalizado para navegar a citas
   useEffect(() => {
@@ -161,11 +189,13 @@ function AppShell() {
         <div className="p-4 border-t border-gray-800">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center">
-              <span className="text-sm">IR</span>
+              <span className="text-sm">
+                {currentUser?.name?.[0]?.toUpperCase() ?? currentUser?.email?.[0]?.toUpperCase() ?? 'U'}
+              </span>
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">Ibeth Renteria</p>
-              <p className="text-xs text-gray-400">Administradora</p>
+              <p className="text-sm font-medium">{currentUser?.name ?? currentUser?.email ?? 'Equipo'}</p>
+              <p className="text-xs text-gray-400">{currentUser?.role ?? 'Sesión activa'}</p>
             </div>
           </div>
         </div>

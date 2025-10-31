@@ -1,586 +1,569 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  Calendar,
+  Clock,
+  User,
+  Plus,
+  Check,
+  X,
+  PenSquare,
+  Trash2,
+  Loader2,
+} from 'lucide-react';
+import { toast } from 'sonner@2.0.3';
+
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Calendar, Clock, User, Phone, Plus, Mail, Send, Check, Package } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
 
-// Componente para cada cita pendiente con estado independiente
-function CitaPendienteItem({ cita, onAsignar, onContactar }: any) {
-  const [correo, setCorreo] = useState('');
+import { apiFetch, ApiError } from '../lib/api';
+import {
+  addDays,
+  addMinutes,
+  formatCurrency,
+  formatDateOnly,
+  formatDateTime,
+  formatTime,
+  localDateTimeToIso,
+  toDateKey,
+  toDateTimeInputValue,
+} from '../lib/format';
+import { invalidateQuery, setQueryData, useApiQuery } from '../lib/data-store';
+import type { Booking, BookingStatus, BookingsResponse, Service, ServicesResponse } from '../types/api';
 
-  return (
-    <div className="border rounded-lg p-4">
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-medium">{cita.cliente.nombre}</h3>
-            <p className="text-sm text-gray-600">{cita.servicio}</p>
-            <p className="text-sm text-gray-500">
-              {new Date(cita.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })} a las {cita.hora}
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="font-semibold text-green-600">{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(cita.costo)}</p>
-          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
-            Sin asignar
-          </Badge>
-        </div>
-      </div>
+const SERVICES_KEY = 'services';
+const TIME_FILTERS = ['today', 'week', 'all'] as const;
+const STATUS_FILTERS = ['all', 'scheduled', 'confirmed', 'done', 'canceled'] as const;
+const ALL_BOOKING_KEYS = TIME_FILTERS.flatMap((time) => STATUS_FILTERS.map((status) => `bookings:${time}:${status}`));
 
-      <div className="bg-gray-50 p-3 rounded-lg mb-3">
-        <p className="text-sm text-gray-600 mb-1">
-          <Phone className="h-3 w-3 inline mr-1" />
-          {cita.cliente.telefono}
-        </p>
-        <p className="text-sm text-gray-600">
-          <Mail className="h-3 w-3 inline mr-1" />
-          {cita.cliente.email}
-        </p>
-      </div>
+const STATUS_LABELS: Record<BookingStatus, string> = {
+  scheduled: 'Programada',
+  confirmed: 'Confirmada',
+  done: 'Realizada',
+  canceled: 'Cancelada',
+};
 
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <Input
-            placeholder="correo@trabajadora.com"
-            type="email"
-            value={correo}
-            onChange={(e) => setCorreo(e.target.value)}
-            className="flex-1"
-          />
-          <Button 
-            className="bg-blue-600 hover:bg-blue-700"
-            onClick={() => {
-              onAsignar(cita.id, correo);
-              setCorreo('');
-            }}
-          >
-            <Send className="h-4 w-4 mr-2" />
-            Enviar Asignación
-          </Button>
-        </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="w-full"
-          onClick={() => onContactar(cita.cliente.telefono, cita.cliente.nombre)}
-        >
-          <Phone className="h-4 w-4 mr-2" />
-          Contactar Cliente por WhatsApp
-        </Button>
-      </div>
-    </div>
-  );
+const STATUS_VARIANTS: Record<BookingStatus, string> = {
+  scheduled: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  confirmed: 'bg-blue-100 text-blue-800 border-blue-200',
+  done: 'bg-green-100 text-green-800 border-green-200',
+  canceled: 'bg-red-100 text-red-700 border-red-200',
+};
+
+type TimeFilter = (typeof TIME_FILTERS)[number];
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+type BookingFormState = {
+  clientName: string;
+  serviceId: string;
+  startTime: string;
+  notes: string;
+};
+
+const EMPTY_FORM: BookingFormState = {
+  clientName: '',
+  serviceId: '',
+  startTime: '',
+  notes: '',
+};
+
+function matchesFilters(booking: Booking, timeFilter: TimeFilter, statusFilter: StatusFilter) {
+  const bookingKey = toDateKey(new Date(booking.startTime));
+  const todayKey = toDateKey(new Date());
+  const weekEndKey = toDateKey(addDays(new Date(), 7));
+
+  if (timeFilter === 'today' && bookingKey !== todayKey) {
+    return false;
+  }
+  if (timeFilter === 'week' && (bookingKey < todayKey || bookingKey > weekEndKey)) {
+    return false;
+  }
+  if (statusFilter !== 'all' && booking.status !== statusFilter) {
+    return false;
+  }
+  return true;
 }
 
-// Componente para citas próximas con modales de edición
-function CitaProximaItem({ cita, productosInventario, onEditarPrecio, onAgregarProductos, onMarcarRealizada }: any) {
-  const [dialogPrecioOpen, setDialogPrecioOpen] = useState(false);
-  const [dialogProductosOpen, setDialogProductosOpen] = useState(false);
-  const [nuevoPrecio, setNuevoPrecio] = useState(cita.costo);
-  const [productosSeleccionados, setProductosSeleccionados] = useState<any[]>([]);
-
-  const handleGuardarPrecio = () => {
-    onEditarPrecio(cita.id, nuevoPrecio);
-    setDialogPrecioOpen(false);
-    toast.success('Precio actualizado', {
-      description: `Nuevo precio: ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(nuevoPrecio)}`
-    });
-  };
-
-  const handleAgregarProducto = (producto: any) => {
-    const existe = productosSeleccionados.find(p => p.id === producto.id);
-    if (existe) {
-      setProductosSeleccionados(productosSeleccionados.map(p => 
-        p.id === producto.id ? { ...p, cantidad: p.cantidad + 1 } : p
-      ));
-    } else {
-      setProductosSeleccionados([...productosSeleccionados, { ...producto, cantidad: 1 }]);
-    }
-  };
-
-  const handleQuitarProducto = (productoId: number) => {
-    setProductosSeleccionados(productosSeleccionados.filter(p => p.id !== productoId));
-  };
-
-  const handleCambiarCantidad = (productoId: number, cantidad: number) => {
-    if (cantidad <= 0) {
-      handleQuitarProducto(productoId);
-    } else {
-      setProductosSeleccionados(productosSeleccionados.map(p => 
-        p.id === productoId ? { ...p, cantidad } : p
-      ));
-    }
-  };
-
-  const handleGuardarProductos = () => {
-    onAgregarProductos(cita.id, productosSeleccionados);
-    setDialogProductosOpen(false);
-    setProductosSeleccionados([]);
-    toast.success('Productos registrados', {
-      description: `Se descontaron ${productosSeleccionados.length} productos del inventario`
-    });
-  };
-
-  return (
-    <div className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 bg-green-100 text-green-700 rounded-full flex items-center justify-center">
-            <Check className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="font-medium">{cita.cliente.nombre}</h3>
-            <p className="text-sm text-gray-600">{cita.servicio}</p>
-            <p className="text-sm text-gray-500">
-              {new Date(cita.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })} a las {cita.hora}
-            </p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="font-semibold text-green-600">{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(cita.costo)}</p>
-          <Badge className="bg-green-100 text-green-800 border-green-200">
-            Confirmada
-          </Badge>
-        </div>
-      </div>
-
-      <div className="bg-blue-50 p-3 rounded-lg mb-3">
-        <p className="text-sm font-medium text-blue-900">Trabajadora Asignada:</p>
-        <p className="text-sm text-blue-700">{cita.trabajadora}</p>
-      </div>
-
-      <div className="flex justify-end space-x-2">
-        <Dialog open={dialogPrecioOpen} onOpenChange={setDialogPrecioOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              Editar Precio
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Editar Precio de la Cita</DialogTitle>
-              <DialogDescription>
-                Modifica el costo final del servicio
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Cliente</label>
-                <p className="text-sm text-gray-600">{cita.cliente.nombre}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Servicio</label>
-                <p className="text-sm text-gray-600">{cita.servicio}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-2">Nuevo Precio (COP)</label>
-                <Input
-                  type="number"
-                  value={nuevoPrecio}
-                  onChange={(e) => setNuevoPrecio(parseInt(e.target.value))}
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setDialogPrecioOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button className="bg-black hover:bg-gray-800" onClick={handleGuardarPrecio}>
-                  Guardar Cambios
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={dialogProductosOpen} onOpenChange={setDialogProductosOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Package className="h-4 w-4 mr-1" />
-              Agregar Productos
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Agregar Productos Usados</DialogTitle>
-              <DialogDescription>
-                Selecciona los productos del inventario utilizados en esta cita
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">Productos Seleccionados</h4>
-                {productosSeleccionados.length === 0 ? (
-                  <p className="text-sm text-gray-500">No hay productos seleccionados</p>
-                ) : (
-                  <div className="space-y-2 mb-4">
-                    {productosSeleccionados.map((producto) => (
-                      <div key={producto.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <span className="text-sm">{producto.nombre}</span>
-                        <div className="flex items-center space-x-2">
-                          <Input
-                            type="number"
-                            value={producto.cantidad}
-                            onChange={(e) => handleCambiarCantidad(producto.id, parseInt(e.target.value))}
-                            className="w-20"
-                            min="1"
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleQuitarProducto(producto.id)}
-                          >
-                            Quitar
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium mb-2">Inventario Disponible</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                  {productosInventario.map((producto: any) => (
-                    <div
-                      key={producto.id}
-                      className="flex items-center justify-between border p-2 rounded hover:bg-gray-50"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">{producto.nombre}</p>
-                        <p className="text-xs text-gray-500">Stock: {producto.cantidad}</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        onClick={() => handleAgregarProducto(producto)}
-                        disabled={producto.cantidad === 0}
-                      >
-                        Agregar
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => {
-                  setDialogProductosOpen(false);
-                  setProductosSeleccionados([]);
-                }}>
-                  Cancelar
-                </Button>
-                <Button 
-                  className="bg-black hover:bg-gray-800" 
-                  onClick={handleGuardarProductos}
-                  disabled={productosSeleccionados.length === 0}
-                >
-                  Guardar Productos
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Button 
-          size="sm" 
-          className="bg-green-600 hover:bg-green-700"
-          onClick={() => onMarcarRealizada(cita.id)}
-        >
-          Marcar como Realizada
-        </Button>
-      </div>
-    </div>
-  );
+function sortByStartTime(items: Booking[]) {
+  return [...items].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 }
 
 export default function Citas() {
-  const [fechaSeleccionada, setFechaSeleccionada] = useState('2025-10-13');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<BookingFormState>(EMPTY_FORM);
+  const [editForm, setEditForm] = useState<BookingFormState>(EMPTY_FORM);
+  const [bookingEditing, setBookingEditing] = useState<Booking | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const serviciosDisponibles = [
-    { id: 'manicura-basica', nombre: 'Manicura Básica', precio: 25000 },
-    { id: 'manicura-gel', nombre: 'Manicura con Gel', precio: 35000 },
-    { id: 'manicura-rusa', nombre: 'Manicura Rusa', precio: 45000 },
-    { id: 'unas-artisticas', nombre: 'Uñas Artísticas', precio: 55000 },
-    { id: 'pedicura-basica', nombre: 'Pedicura Básica', precio: 30000 },
-    { id: 'pedicura-spa', nombre: 'Pedicura Spa', precio: 45000 },
-    { id: 'pestanas-clasicas', nombre: 'Extensión de Pestañas Clásica', precio: 80000 },
-    { id: 'pestanas-volumen', nombre: 'Extensión de Pestañas Volumen', precio: 120000 },
-    { id: 'retoque-pestanas', nombre: 'Retoque de Pestañas', precio: 50000 },
-    { id: 'lifting-pestanas', nombre: 'Lifting de Pestañas', precio: 60000 }
-  ];
+  const bookingsKey = `bookings:${timeFilter}:${statusFilter}`;
 
-  // Productos del inventario para usar en citas
-  const productosInventario = [
-    { id: 1, nombre: 'Esmalte OPI Classic Red', cantidad: 12, categoria: 'esmaltes' },
-    { id: 2, nombre: 'Gel Semipermanente CND Shellac', cantidad: 3, categoria: 'geles' },
-    { id: 3, nombre: 'Lima de Uñas Professional', cantidad: 25, categoria: 'herramientas' },
-    { id: 4, nombre: 'Acetona Pura 500ml', cantidad: 0, categoria: 'quimicos' },
-    { id: 5, nombre: 'Pestañas Individuales Volumen', cantidad: 8, categoria: 'pestanas' },
-    { id: 6, nombre: 'Pegamento para Pestañas Premium', cantidad: 2, categoria: 'pestanas' },
-    { id: 7, nombre: 'Crema Hidratante para Cutículas', cantidad: 15, categoria: 'cuidado' },
-    { id: 8, nombre: 'Decoraciones Strass Mix', cantidad: 50, categoria: 'decoraciones' }
-  ];
-
-  const citasPendientes = [
-    {
-      id: 'PEND-001',
-      cliente: { nombre: 'Carolina Pérez', telefono: '+57 300 111 2222', email: 'carolina@email.com' },
-      servicio: 'Manicura con Gel',
-      fecha: '2025-10-15',
-      hora: '10:00',
-      costo: 35000,
-      estado: 'sin-asignar'
-    },
-    {
-      id: 'PEND-002',
-      cliente: { nombre: 'Valentina Torres', telefono: '+57 300 333 4444', email: 'valentina@email.com' },
-      servicio: 'Pestañas Volumen',
-      fecha: '2025-10-16',
-      hora: '14:00',
-      costo: 120000,
-      estado: 'sin-asignar'
-    },
-    {
-      id: 'PEND-003',
-      cliente: { nombre: 'Daniela Ruiz', telefono: '+57 300 555 6666', email: 'daniela@email.com' },
-      servicio: 'Pedicura Spa',
-      fecha: '2025-10-14',
-      hora: '16:30',
-      costo: 45000,
-      estado: 'sin-asignar'
+  const { data: services = [] } = useApiQuery<Service[]>(
+    SERVICES_KEY,
+    async () => {
+      const response = await apiFetch<ServicesResponse>('/api/services');
+      return response.services;
     }
-  ];
+  );
 
-  const citasProximas = [
-    {
-      id: 'CONF-001',
-      cliente: { nombre: 'María Rodríguez', telefono: '+57 300 123 4567', email: 'maria.rodriguez@email.com' },
-      servicio: 'Manicura + Gel',
-      trabajadora: 'ibeth.renteria@jr.com',
-      fecha: '2025-10-13',
-      hora: '15:00',
-      costo: 35000,
-      estado: 'confirmada'
-    },
-    {
-      id: 'CONF-002',
-      cliente: { nombre: 'Ana García', telefono: '+57 300 234 5678', email: 'ana.garcia@email.com' },
-      servicio: 'Extensión de Pestañas',
-      trabajadora: 'maria.gonzalez@jr.com',
-      fecha: '2025-10-14',
-      hora: '11:00',
-      costo: 80000,
-      estado: 'confirmada'
-    },
-    {
-      id: 'CONF-003',
-      cliente: { nombre: 'Laura Martínez', telefono: '+57 300 345 6789', email: 'laura.martinez@email.com' },
-      servicio: 'Uñas Artísticas',
-      trabajadora: 'ana.lopez@jr.com',
-      fecha: '2025-10-14',
-      hora: '14:30',
-      costo: 55000,
-      estado: 'confirmada'
+  const { data: bookings = [], status, error, refetch } = useApiQuery<Booking[]>(
+    bookingsKey,
+    async () => {
+      const params = new URLSearchParams();
+      const now = new Date();
+      if (timeFilter === 'today') {
+        const dateKey = toDateKey(now);
+        params.set('from', dateKey);
+        params.set('to', dateKey);
+      } else if (timeFilter === 'week') {
+        params.set('from', toDateKey(now));
+        params.set('to', toDateKey(addDays(now, 7)));
+      }
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter);
+      }
+      const search = params.toString();
+      const response = await apiFetch<BookingsResponse>(`/api/bookings${search ? `?${search}` : ''}`);
+      return sortByStartTime(response.bookings);
     }
-  ];
+  );
 
-  const citasHoy = [
-    {
-      id: 'HOY-001',
-      cliente: { nombre: 'Sofía López', telefono: '+57 300 456 7890', email: 'sofia.lopez@email.com' },
-      servicio: 'Manicura Rusa',
-      trabajadora: 'ibeth.renteria@jr.com',
-      fecha: '2025-10-13',
-      hora: '09:30',
-      costo: 45000,
-      estado: 'en-progreso'
-    },
-    {
-      id: 'HOY-002',
-      cliente: { nombre: 'Carmen Torres', telefono: '+57 300 567 8901', email: 'carmen.torres@email.com' },
-      servicio: 'Pedicura Básica',
-      trabajadora: 'maria.gonzalez@jr.com',
-      fecha: '2025-10-13',
-      hora: '11:00',
-      costo: 30000,
-      estado: 'realizada'
-    },
-    {
-      id: 'HOY-003',
-      cliente: { nombre: 'Patricia Díaz', telefono: '+57 300 678 9012', email: 'patricia.diaz@email.com' },
-      servicio: 'Lifting de Pestañas',
-      trabajadora: 'ana.lopez@jr.com',
-      fecha: '2025-10-13',
-      hora: '13:00',
-      costo: 60000,
-      estado: 'confirmada'
-    }
-  ];
+  const servicesOptions = useMemo(() => services.map((service) => ({ value: service.id, label: service.name })), [services]);
 
-  const formatearPrecio = (precio: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(precio);
+  const selectedCreateService = services.find((service) => service.id === createForm.serviceId) || null;
+  const selectedEditService = services.find((service) => service.id === editForm.serviceId) || null;
+
+  const createEndPreview = useMemo(() => {
+    const startIso = localDateTimeToIso(createForm.startTime);
+    if (!selectedCreateService || !startIso) return null;
+    const end = addMinutes(new Date(startIso), selectedCreateService.duration);
+    return formatTime(end.toISOString());
+  }, [createForm.startTime, selectedCreateService]);
+
+  const editEndPreview = useMemo(() => {
+    if (!selectedEditService || !editForm.startTime) return null;
+    const startIso = localDateTimeToIso(editForm.startTime);
+    if (!startIso) return null;
+    const end = addMinutes(new Date(startIso), selectedEditService.duration);
+    return formatTime(end.toISOString());
+  }, [editForm.startTime, selectedEditService]);
+
+  const resetCreateForm = () => setCreateForm(EMPTY_FORM);
+  const resetEditForm = () => {
+    setEditForm(EMPTY_FORM);
+    setBookingEditing(null);
   };
 
-  const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString('es-CO', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
+  const upsertBookingInCache = (updated: Booking, removeIfMismatch = false) => {
+    setQueryData<Booking[]>(bookingsKey, (prev = []) => {
+      const exists = prev.some((item) => item.id === updated.id);
+      const shouldInclude = matchesFilters(updated, timeFilter, statusFilter);
+      if (!shouldInclude && removeIfMismatch) {
+        return prev.filter((item) => item.id !== updated.id);
+      }
+      if (!exists) {
+        return shouldInclude ? sortByStartTime([...prev, updated]) : prev;
+      }
+      return sortByStartTime(prev.map((item) => (item.id === updated.id ? updated : item)).filter((item) => (removeIfMismatch ? matchesFilters(item, timeFilter, statusFilter) : true)));
     });
   };
 
-  const getEstadoColor = (estado: string) => {
-    switch (estado) {
-      case 'sin-asignar':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'confirmada':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'en-progreso':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'realizada':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const handleAsignarTrabajadora = (citaId: string, correo: string) => {
-    if (!correo || !correo.includes('@')) {
-      toast.error('Por favor ingresa un correo válido');
+  const handleCreateBooking = async () => {
+    if (isSubmitting) return;
+    if (!selectedCreateService) {
+      toast.error('Selecciona un servicio');
       return;
     }
-    
-    toast.success('Correo enviado a la trabajadora', {
-      description: `Se envió la asignación a ${correo}. La trabajadora tiene 24 horas para confirmar.`
+    const startIso = localDateTimeToIso(createForm.startTime);
+    if (!startIso) {
+      toast.error('Selecciona una fecha y hora válidas');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const startDate = new Date(startIso);
+    const endDate = addMinutes(startDate, selectedCreateService.duration);
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticBooking: Booking = {
+      id: optimisticId,
+      clientName: createForm.clientName.trim(),
+      serviceId: selectedCreateService.id,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+      status: 'scheduled',
+      notes: createForm.notes.trim() ? createForm.notes.trim() : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      service: selectedCreateService,
+      payments: [],
+    };
+
+    if (matchesFilters(optimisticBooking, timeFilter, statusFilter)) {
+      setQueryData<Booking[]>(bookingsKey, (prev = []) => sortByStartTime([optimisticBooking, ...prev]));
+    }
+
+    try {
+      const { booking } = await apiFetch<{ booking: Booking }>('/api/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientName: optimisticBooking.clientName,
+          serviceId: optimisticBooking.serviceId,
+          startTime: startDate.toISOString(),
+          notes: optimisticBooking.notes,
+        }),
+      });
+      upsertBookingInCache({ ...booking, service: selectedCreateService }, true);
+      toast.success('Cita creada');
+      setCreateDialogOpen(false);
+      resetCreateForm();
+    } catch (err) {
+      setQueryData<Booking[]>(bookingsKey, (prev = []) => prev.filter((item) => item.id !== optimisticId));
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible crear la cita');
+    } finally {
+      setIsSubmitting(false);
+      invalidateQuery([...ALL_BOOKING_KEYS, 'stats-overview', 'stats-revenue']);
+    }
+  };
+
+  const openEditDialog = (booking: Booking) => {
+    setBookingEditing(booking);
+    setEditForm({
+      clientName: booking.clientName,
+      serviceId: booking.serviceId,
+      startTime: toDateTimeInputValue(booking.startTime),
+      notes: booking.notes ?? '',
     });
+    setEditDialogOpen(true);
   };
 
-  const handleContactarCliente = (telefono: string, nombre: string) => {
-    const whatsappUrl = `https://wa.me/${telefono.replace(/[^0-9]/g, '')}?text=Hola ${nombre}, te contactamos desde JR Studio de Belleza...`;
-    window.open(whatsappUrl, '_blank');
+  const handleUpdateBooking = async () => {
+    if (!bookingEditing || isSubmitting) return;
+    const service = services.find((item) => item.id === editForm.serviceId);
+    if (!service) {
+      toast.error('Selecciona un servicio válido');
+      return;
+    }
+    const startIso = localDateTimeToIso(editForm.startTime);
+    if (!startIso) {
+      toast.error('Selecciona una fecha y hora válidas');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const startDate = new Date(startIso);
+    const endDate = addMinutes(startDate, service.duration);
+    const updated: Booking = {
+      ...bookingEditing,
+      clientName: editForm.clientName.trim(),
+      serviceId: service.id,
+      startTime: startDate.toISOString(),
+      endTime: endDate.toISOString(),
+      notes: editForm.notes.trim() ? editForm.notes.trim() : null,
+      service,
+    };
+    upsertBookingInCache(updated, true);
+
+    try {
+      const { booking } = await apiFetch<{ booking: Booking }>(`/api/bookings/${bookingEditing.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          clientName: updated.clientName,
+          serviceId: updated.serviceId,
+          startTime: updated.startTime,
+          notes: updated.notes,
+          status: updated.status,
+        }),
+      });
+      upsertBookingInCache({ ...booking, service }, true);
+      toast.success('Cita actualizada');
+      setEditDialogOpen(false);
+      resetEditForm();
+    } catch (err) {
+      upsertBookingInCache(bookingEditing, true);
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible actualizar la cita');
+    } finally {
+      setIsSubmitting(false);
+      invalidateQuery([...ALL_BOOKING_KEYS, 'stats-overview', 'stats-revenue']);
+    }
   };
 
-  const handleEditarPrecio = (citaId: string, nuevoPrecio: number) => {
-    console.log(`Editando precio de cita ${citaId} a ${nuevoPrecio}`);
+  const handleChangeStatus = async (booking: Booking, status: BookingStatus) => {
+    const previous = booking;
+    const updated: Booking = { ...booking, status, updatedAt: new Date().toISOString() };
+    upsertBookingInCache(updated, true);
+    try {
+      await apiFetch(`/api/bookings/${booking.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      toast.success(`Cita ${STATUS_LABELS[status].toLowerCase()}`);
+    } catch (err) {
+      upsertBookingInCache(previous, true);
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible actualizar el estado');
+    } finally {
+      invalidateQuery([...ALL_BOOKING_KEYS, 'stats-overview', 'stats-revenue']);
+    }
   };
 
-  const handleAgregarProductos = (citaId: string, productos: any[]) => {
-    console.log(`Agregando productos a cita ${citaId}:`, productos);
+  const handleDeleteBooking = async (booking: Booking) => {
+    const previousList = bookings;
+    setQueryData<Booking[]>(bookingsKey, (prev = []) => prev.filter((item) => item.id !== booking.id));
+    try {
+      await apiFetch(`/api/bookings/${booking.id}`, { method: 'DELETE' });
+      toast.success('Cita eliminada');
+    } catch (err) {
+      setQueryData<Booking[]>(bookingsKey, () => previousList);
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible eliminar la cita');
+    } finally {
+      invalidateQuery([...ALL_BOOKING_KEYS, 'stats-overview', 'stats-revenue']);
+    }
   };
 
-  const handleMarcarRealizada = (citaId: string) => {
-    toast.success('Cita marcada como realizada', {
-      description: 'Se actualizó el estado y se registró en el sistema de pagos.'
-    });
-  };
+  const isCreateValid =
+    createForm.clientName.trim().length > 0 &&
+    Boolean(createForm.serviceId) &&
+    Boolean(localDateTimeToIso(createForm.startTime));
 
-  const handleCrearCita = () => {
-    toast.success('Cita creada exitosamente', {
-      description: 'La nueva cita se agregó al sistema.'
-    });
+  const isEditValid =
+    editForm.clientName.trim().length > 0 &&
+    Boolean(editForm.serviceId) &&
+    Boolean(localDateTimeToIso(editForm.startTime));
+
+  const renderContent = () => {
+    if (status === 'loading') {
+      return (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index} className="animate-pulse">
+              <CardContent className="p-6 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-1/3" />
+                <div className="h-3 bg-gray-100 rounded w-2/3" />
+                <div className="h-3 bg-gray-100 rounded w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      );
+    }
+
+    if (status === 'error') {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <p className="text-sm text-gray-600">{error instanceof Error ? error.message : 'No fue posible cargar las citas.'}</p>
+          <Button variant="outline" onClick={() => refetch()}>
+            Reintentar
+          </Button>
+        </div>
+      );
+    }
+
+    if (bookings.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <Calendar className="h-10 w-10 text-gray-400" />
+          <div>
+            <p className="font-medium text-gray-700">No hay citas para este filtro</p>
+            <p className="text-sm text-gray-500">Crea una nueva cita para comenzar</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {bookings.map((booking) => (
+          <Card key={booking.id} className="border border-gray-200">
+            <CardHeader className="pb-2 flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <User className="h-5 w-5 text-gray-500" />
+                  <span>{booking.clientName}</span>
+                </CardTitle>
+                <div className="mt-2 text-sm text-gray-600 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    <span>{formatDateOnly(booking.startTime)} · {formatTime(booking.startTime)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    <span>{booking.service?.name ?? 'Servicio'} · {booking.service?.duration ?? 0} min</span>
+                  </div>
+                  {booking.notes && (
+                    <p className="text-xs text-gray-500">Notas: {booking.notes}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <Badge variant="outline" className={STATUS_VARIANTS[booking.status]}>
+                  {STATUS_LABELS[booking.status]}
+                </Badge>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="icon" onClick={() => openEditDialog(booking)} aria-label="Editar cita">
+                    <PenSquare className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-red-500 hover:text-red-600"
+                    onClick={() => handleDeleteBooking(booking)}
+                    aria-label="Eliminar cita"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4 text-sm text-gray-600">
+                <span className="font-medium">Duración total:</span>
+                <span>{Math.round((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / 60000)} min</span>
+                <span className="font-medium">Termina:</span>
+                <span>{formatTime(booking.endTime)}</span>
+                {booking.payments?.length ? (
+                  <span className="font-medium text-green-600">
+                    Pagado {formatCurrency(booking.payments.reduce((acc, payment) => acc + payment.amount, 0))}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {booking.status !== 'confirmed' && booking.status !== 'done' && (
+                  <Button size="sm" variant="outline" onClick={() => handleChangeStatus(booking, 'confirmed')}>
+                    <Check className="h-4 w-4 mr-2" /> Confirmar
+                  </Button>
+                )}
+                {booking.status !== 'done' && booking.status !== 'canceled' && (
+                  <Button size="sm" variant="outline" onClick={() => handleChangeStatus(booking, 'done')}>
+                    <Check className="h-4 w-4 mr-2" /> Marcar realizada
+                  </Button>
+                )}
+                {booking.status !== 'canceled' && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-500 hover:text-red-600"
+                    onClick={() => handleChangeStatus(booking, 'canceled')}
+                  >
+                    <X className="h-4 w-4 mr-2" /> Cancelar
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Seleccionar Fecha</label>
-          <Input
-            type="date"
-            value={fechaSeleccionada}
-            onChange={(e) => setFechaSeleccionada(e.target.value)}
-            className="w-44"
-          />
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {TIME_FILTERS.map((filter) => (
+            <Button
+              key={filter}
+              variant={timeFilter === filter ? 'default' : 'outline'}
+              onClick={() => setTimeFilter(filter)}
+              className={timeFilter === filter ? 'bg-black text-white' : ''}
+            >
+              {filter === 'today' ? 'Hoy' : filter === 'week' ? 'Próxima semana' : 'Todas'}
+            </Button>
+          ))}
+          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map((filter) => (
+                <SelectItem key={filter} value={filter}>
+                  {filter === 'all' ? 'Todos los estados' : STATUS_LABELS[filter as BookingStatus]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-
-        <Dialog>
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) {
+              resetCreateForm();
+            }
+          }}
+        >
           <DialogTrigger asChild>
-            <Button className="bg-black hover:bg-gray-800">
-              <Plus className="h-4 w-4 mr-2" />
-              Agregar Nueva Cita
+            <Button className="bg-black hover:bg-gray-900">
+              <Plus className="h-4 w-4 mr-2" /> Nueva cita
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Programar Nueva Cita</DialogTitle>
-              <DialogDescription>
-                Completa la información para crear una nueva cita en el sistema
-              </DialogDescription>
+              <DialogTitle>Registrar cita</DialogTitle>
+              <DialogDescription>Configura la cita para agendarla con la hora de Tijuana.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Nombre del Cliente</label>
-                  <Input placeholder="Nombre completo" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Teléfono</label>
-                  <Input placeholder="+57 300 123 4567" />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="booking-client">Cliente</Label>
+                <Input
+                  id="booking-client"
+                  value={createForm.clientName}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, clientName: event.target.value }))}
+                  placeholder="Nombre de la clienta"
+                />
               </div>
-
-              <div>
-                <label className="text-sm font-medium">Email (opcional)</label>
-                <Input placeholder="cliente@email.com" type="email" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Servicio</label>
-                  <Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Servicio</Label>
+                  <Select
+                    value={createForm.serviceId}
+                    onValueChange={(value) => setCreateForm((prev) => ({ ...prev, serviceId: value }))}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar servicio" />
+                      <SelectValue placeholder="Selecciona un servicio" />
                     </SelectTrigger>
                     <SelectContent>
-                      {serviciosDisponibles.map((servicio) => (
-                        <SelectItem key={servicio.id} value={servicio.id}>
-                          {servicio.nombre} - {formatearPrecio(servicio.precio)}
+                      {servicesOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Costo Estimado</label>
-                  <Input placeholder="35000" type="number" />
+                <div className="space-y-2">
+                  <Label htmlFor="booking-start">Fecha y hora</Label>
+                  <Input
+                    id="booking-start"
+                    type="datetime-local"
+                    value={createForm.startTime}
+                    onChange={(event) => setCreateForm((prev) => ({ ...prev, startTime: event.target.value }))}
+                  />
+                  {createEndPreview && (
+                    <p className="text-xs text-gray-500">Termina a las {createEndPreview} hrs (zona Tijuana)</p>
+                  )}
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Fecha</label>
-                  <Input type="date" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Hora</label>
-                  <Input type="time" />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="booking-notes">Notas (opcional)</Label>
+                <Textarea
+                  id="booking-notes"
+                  value={createForm.notes}
+                  onChange={(event) => setCreateForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Preferencias, recordatorios, etc."
+                />
               </div>
-
-              <div>
-                <label className="text-sm font-medium">Correo de la Trabajadora (opcional)</label>
-                <Input placeholder="trabajadora@email.com" type="email" />
-                <p className="text-xs text-gray-500 mt-1">Si asignas una trabajadora, se enviará correo de confirmación automáticamente</p>
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline">Cancelar</Button>
-                <Button className="bg-black hover:bg-gray-800" onClick={handleCrearCita}>
-                  Crear Cita
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateBooking} disabled={!isCreateValid || isSubmitting}>
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar'}
                 </Button>
               </div>
             </div>
@@ -588,161 +571,77 @@ export default function Citas() {
         </Dialog>
       </div>
 
-      <Tabs defaultValue="pendientes" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="pendientes">Citas Pendientes</TabsTrigger>
-          <TabsTrigger value="proximas">Citas Próximas</TabsTrigger>
-          <TabsTrigger value="hoy">Citas del Día</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pendientes" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Citas Sin Asignar</span>
-                <Badge variant="outline" className="bg-yellow-50">{citasPendientes.length} pendientes</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {citasPendientes.map((cita) => (
-                  <CitaPendienteItem
-                    key={cita.id}
-                    cita={cita}
-                    onAsignar={handleAsignarTrabajadora}
-                    onContactar={handleContactarCliente}
-                  />
-                ))}
-
-                {citasPendientes.length === 0 && (
-                  <div className="text-center py-8">
-                    <Check className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      No hay citas pendientes
-                    </h3>
-                    <p className="text-gray-600">
-                      Todas las citas están asignadas a trabajadoras
-                    </p>
-                  </div>
-                )}
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            resetEditForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar cita</DialogTitle>
+            <DialogDescription>Actualiza los datos de la cita seleccionada.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-booking-client">Cliente</Label>
+              <Input
+                id="edit-booking-client"
+                value={editForm.clientName}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, clientName: event.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Servicio</Label>
+                <Select value={editForm.serviceId} onValueChange={(value) => setEditForm((prev) => ({ ...prev, serviceId: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un servicio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {servicesOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="proximas" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Citas Confirmadas y Asignadas</span>
-                <Badge variant="outline" className="bg-green-50">{citasProximas.length} confirmadas</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {citasProximas.map((cita) => (
-                  <CitaProximaItem
-                    key={cita.id}
-                    cita={cita}
-                    productosInventario={productosInventario}
-                    onEditarPrecio={handleEditarPrecio}
-                    onAgregarProductos={handleAgregarProductos}
-                    onMarcarRealizada={handleMarcarRealizada}
-                  />
-                ))}
-
-                {citasProximas.length === 0 && (
-                  <div className="text-center py-8">
-                    <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      No hay citas próximas
-                    </h3>
-                    <p className="text-gray-600">
-                      Las citas confirmadas aparecerán aquí
-                    </p>
-                  </div>
-                )}
+              <div className="space-y-2">
+                <Label htmlFor="edit-booking-start">Fecha y hora</Label>
+                <Input
+                  id="edit-booking-start"
+                  type="datetime-local"
+                  value={editForm.startTime}
+                  onChange={(event) => setEditForm((prev) => ({ ...prev, startTime: event.target.value }))}
+                />
+                {editEndPreview && <p className="text-xs text-gray-500">Termina a las {editEndPreview} hrs</p>}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-booking-notes">Notas</Label>
+              <Textarea
+                id="edit-booking-notes"
+                value={editForm.notes}
+                onChange={(event) => setEditForm((prev) => ({ ...prev, notes: event.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleUpdateBooking} disabled={!isEditValid || isSubmitting}>
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar cambios'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <TabsContent value="hoy" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Citas de Hoy - {formatearFecha('2025-10-13')}</span>
-                <Badge variant="outline" className="bg-blue-50">{citasHoy.length} citas</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {citasHoy.map((cita) => (
-                  <div 
-                    key={cita.id} 
-                    className={`border rounded-lg p-4 ${cita.estado === 'realizada' ? 'bg-gray-50 opacity-75' : ''}`}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                          cita.estado === 'realizada' 
-                            ? 'bg-gray-200 text-gray-600' 
-                            : cita.estado === 'en-progreso'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}>
-                          <Clock className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-medium">{cita.cliente.nombre}</h3>
-                          <p className="text-sm text-gray-600">{cita.servicio}</p>
-                          <p className="text-sm text-gray-500">Hora: {cita.hora}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-green-600">{formatearPrecio(cita.costo)}</p>
-                        <Badge className={getEstadoColor(cita.estado)}>
-                          {cita.estado === 'realizada' ? 'Realizada' : cita.estado === 'en-progreso' ? 'En Progreso' : 'Confirmada'}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    <div className="bg-purple-50 p-3 rounded-lg mb-3">
-                      <p className="text-sm font-medium text-purple-900">Trabajadora:</p>
-                      <p className="text-sm text-purple-700">{cita.trabajadora}</p>
-                    </div>
-
-                    {cita.estado !== 'realizada' && (
-                      <div className="flex justify-end space-x-2">
-                        <Button 
-                          size="sm" 
-                          className="bg-green-600 hover:bg-green-700"
-                          onClick={() => handleMarcarRealizada(cita.id)}
-                        >
-                          <Check className="h-4 w-4 mr-2" />
-                          Marcar como Realizada
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {citasHoy.length === 0 && (
-                  <div className="text-center py-8">
-                    <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      No hay citas para hoy
-                    </h3>
-                    <p className="text-gray-600">
-                      Las citas del día aparecerán aquí
-                    </p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {renderContent()}
     </div>
   );
 }

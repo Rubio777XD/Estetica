@@ -2,9 +2,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Development uses SQLite for quick local iterations.
-// For production, switch the provider to "postgresql" and
-// update the DATABASE_URL to point at the managed instance (see notes in DATABASE_DESIGN.md).
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -12,161 +9,85 @@ datasource db {
 
 enum Role {
   ADMIN
-  SECRETARY
-  WORKER
+  STAFF
 }
 
-enum AppointmentStatus {
-  PENDING
-  UNASSIGNED
-  ASSIGNED
-  CONFIRMED
-  COMPLETED
-  CANCELED
+enum BookingStatus {
+  scheduled
+  confirmed
+  done
+  canceled
 }
 
 enum PaymentMethod {
-  CASH
-  CARD
-  TRANSFER
-  OTHER
+  cash
+  transfer
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
   name         String?
-  role         Role          @default(WORKER)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-
-  assignedAppointments Appointment[] @relation("AssignedWorker")
-  invites             UserInvite[]  @relation("InvitedBy")
-
-  @@index([role])
+  role         Role     @default(STAFF)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Service {
-  id          String   @id @default(cuid())
-  name        String   @unique 
-  basePrice   Decimal  @db.Decimal(10, 2)
-  durationMin Int
-  description String?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String   @unique
+  price     Float
+  duration  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  appointments Appointment[]
+  bookings Booking[]
 
-  @@index([active])
+  @@index([name])
 }
 
+model Booking {
+  id         String        @id @default(cuid())
+  clientName String
+  serviceId  String
+  startTime  DateTime
+  endTime    DateTime
+  status     BookingStatus @default(scheduled)
+  notes      String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
-model Appointment {
-  id                  String             @id @default(cuid())
-  clientName          String
-  clientEmail         String?
-  clientPhone         String?
-  /// Date-only semantics. Store as midnight UTC to avoid TZ drift.
-  scheduledDate       DateTime
-  /// Stringified HH:mm (24h) slot selected in the booking UI.
-  scheduledTime       String
-  status              AppointmentStatus  @default(PENDING)
-  /// Optional quote captured during booking before final payment.
-  estimatedPrice      Decimal?           @db.Decimal(10, 2)
-  serviceId           String
-  assignedWorkerEmail String?
-  assignedWorkerId    String?
-  confirmToken        String?            @unique
-  confirmTokenExpiresAt DateTime?
-  assignedAt          DateTime?
-  confirmedAt         DateTime?
-  completedAt         DateTime?
-  canceledAt          DateTime?
-  notes               String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  service Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  payments Payment[]
 
-  service       Service      @relation(fields: [serviceId], references: [id])
-  assignedWorker User?       @relation("AssignedWorker", fields: [assignedWorkerId], references: [id])
-  payment       Payment?
-  productUsages ProductUsage[]
-
-  @@index([scheduledDate])
+  @@index([startTime])
   @@index([status])
-  @@index([assignedWorkerEmail])
-  @@index([assignedWorkerId])
-  @@index([serviceId, scheduledDate])
+  @@index([serviceId])
 }
 
 model Payment {
-  id                     String          @id @default(cuid())
-  appointmentId          String          @unique
-  amount                 Decimal         @db.Decimal(10, 2)
-  tip                    Decimal?        @db.Decimal(10, 2)
-  method                 PaymentMethod   @default(CASH)
-  workerCommissionPct    Decimal         @db.Decimal(5, 4) @default(0.4000)
-  workerCommissionAmount Decimal         @db.Decimal(10, 2)
-  businessGain           Decimal         @db.Decimal(10, 2)
-  paidAt                 DateTime?
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
-  notes                  String?
+  id        String        @id @default(cuid())
+  bookingId String
+  amount    Float
+  method    PaymentMethod
+  createdAt DateTime      @default(now())
 
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
-  @@index([paidAt])
+  @@index([createdAt])
+  @@index([method])
 }
 
 model Product {
-  id         String    @id @default(cuid())
-  name       String
-  sku        String?   @unique
-  stock      Int       @default(0)
-  minStock   Int?
-  category   String?
-  buyPrice   Decimal   @db.Decimal(10, 2)
-  sellPrice  Decimal?  @db.Decimal(10, 2)
-  expiresAt  DateTime?
-  location   String?
-  active     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  price             Float
+  stock             Int
+  lowStockThreshold Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  usages ProductUsage[]
-
-  @@index([active])
-  @@index([category])
-}
-
-model ProductUsage {
-  id            String      @id @default(cuid())
-  appointmentId String
-  productId     String
-  quantity      Decimal     @db.Decimal(10, 2)
-  notes         String?
-  createdAt     DateTime    @default(now())
-
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  @@unique([appointmentId, productId])
-}
-
-model UserInvite {
-  id          String   @id @default(cuid())
-  email       String
-  token       String   @unique
-  role        Role
-  expiresAt   DateTime
-  usedAt      DateTime?
-  invitedById String?
-  createdAt   DateTime @default(now())
-
-  invitedBy User? @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-
-  @@index([email])
-  @@index([expiresAt])
-  @@index([role])
+  @@index([name])
+  @@index([stock])
 }

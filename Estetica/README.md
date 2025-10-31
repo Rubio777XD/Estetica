@@ -1,156 +1,184 @@
-# Estética – Monorepo Landing, Dashboard y API
+# Estética – Landing, Dashboard y API con sesión por cookie HttpOnly
 
-## Arquitectura y dominios
-- **Landing (Vite + React, puerto 3001):** sitio público con MiniLoginModal para el personal. Consume la API siempre con `credentials: "include"`.
-- **Dashboard (Vite + React, puerto 3003):** panel interno protegido. Valida la sesión llamando a `/api/me` al montar y ofrece cierre de sesión desde el header.
-- **API (Express + Prisma, puerto 3000):** expone `/api/login`, `/api/me`, `/api/logout`, catálogo y estadísticas. El middleware de autenticación prioriza la cookie HttpOnly y conserva compatibilidad con `Authorization: Bearer`.
-- **Producción:** servir Landing y Dashboard bajo el mismo dominio y publicar el backend tras un proxy inverso que exponga `/api` en el mismo origen para eliminar CORS.
-
-## Requisitos
-- Node.js 18 o superior.
-- npm (se probó con npm 9).
-- PostgreSQL con las migraciones de Prisma aplicadas.
-- Chrome/Chromium para correr Lighthouse localmente.
+## Arquitectura
+- **Landing (`Landing/`, puerto 3001 en dev):** sitio público optimizado para performance. Redirige al Dashboard tras un login satisfactorio y nunca manipula el token directamente; todas las peticiones usan `credentials: 'include'`.
+- **Dashboard (`Dashboard/`, puerto 3003 en dev):** panel interno con guard de sesión. Consume la API mediante el helper `apiFetch` (incluye cookies y maneja 401 redirigiendo a la Landing).
+- **API (`backend/`, puerto 3000):** Express + Prisma sobre PostgreSQL. La cookie HttpOnly (`salon_session` por defecto) es la fuente de verdad; si existe un header `Authorization` se acepta para compatibilidad pero se prioriza la cookie. En producción se sirve detrás de un proxy bajo el mismo dominio (`/api`).
 
 ## Variables de entorno
-### Desarrollo
-- **Landing (`Landing/.env`):**
-  ```env
-  VITE_API_URL=http://localhost:3000
-  VITE_PUBLIC_DASHBOARD_URL=http://localhost:3003
+### Backend (`backend/.env`)
+```env
+PORT=3000
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+JWT_SECRET=clave_super_segura
+SESSION_COOKIE_NAME=salon_session
+SESSION_COOKIE_DOMAIN= # opcional, establece el dominio en producción
+```
+- En desarrollo la cookie se emite con `Secure=false`, `SameSite=Lax` y `HttpOnly=true`. En producción el proxy debe estar en HTTPS para habilitar `Secure=true`.
+
+### Dashboard (`Dashboard/.env`)
+```env
+VITE_API_URL=http://localhost:3000
+VITE_PUBLIC_LANDING_URL=http://localhost:3001
+```
+
+### Landing (`Landing/.env`)
+```env
+VITE_API_URL=http://localhost:3000
+VITE_PUBLIC_DASHBOARD_URL=http://localhost:3003
+```
+
+## Base de datos y Prisma
+Modelos principales (ver `backend/prisma/schema.prisma`):
+- **Service:** `id`, `name`, `price`, `duration`, `createdAt`, `updatedAt`.
+- **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status` (`scheduled`, `confirmed`, `done`, `canceled`), `notes`, `createdAt`, `updatedAt`.
+- **Payment:** `id`, `bookingId`, `amount`, `method` (`cash`, `transfer`), `createdAt`.
+- **Product:** `id`, `name`, `price`, `stock`, `lowStockThreshold`, `createdAt`, `updatedAt`.
+- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`).
+
+### Migraciones y seed
+```bash
+cd backend
+npm install
+npm run prisma:migrate      # aplica migraciones (usa DATABASE_URL)
+npm run prisma:seed         # inserta datos demo (servicios, citas, pagos, productos)
+```
+- **Reset rápido:** `npx prisma migrate reset` (borra y recrea la BD, vuelve a ejecutar el seed).
+- El seed crea: 5 servicios, 7 citas recientes repartidas por estado, 2 pagos y 4 productos (3 de ellos en stock bajo).
+
+## Puesta en marcha en desarrollo
+```bash
+# Backend
+cd backend
+npm run dev
+
+# Landing
+cd ../Landing
+npm install
+npm run dev -- --port 3001
+
+# Dashboard
+cd ../Dashboard
+npm install
+npm run dev -- --port 3003
+```
+- El backend expone CORS sólo para `http://localhost:3001` y `http://localhost:3003` con `credentials: true`.
+- El Dashboard redirige a la Landing si cualquier petición devuelve 401 (`apiFetch` emite el evento `dashboard:unauthorized`).
+
+## Endpoints principales
+Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/login` y `/api/logout`). Validaciones con Zod.
+
+### Autenticación
+- `POST /api/login` → Body `{ email, password }`. Devuelve `{ token }` (sólo informativo) y envía cookie HttpOnly. Rate limit: 5 intentos/IP/min.
+- `GET /api/me` → `{ user: { id, email, name, role } }` o 401.
+- `POST /api/logout` → 204 y limpia la cookie.
+- `GET /api/health` → público.
+
+### Servicios
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| GET | `/api/services` | Lista ordenada por nombre. |
+| POST | `/api/services` | Crea servicio. Body: `{ name, price, duration }`. |
+| PUT | `/api/services/:id` | Actualiza servicio. |
+| DELETE | `/api/services/:id` | Elimina servicio (409 si hay citas asociadas). |
+
+### Citas (Bookings)
+- `GET /api/bookings?from=YYYY-MM-DD&to=YYYY-MM-DD&status=scheduled|confirmed|done|canceled&limit=200`
+  - Filtra por rango (en zona `America/Tijuana`) y estado. Devuelve `{ bookings: Booking[] }` con `service` y `payments` embebidos.
+- `POST /api/bookings`
+  ```json
+  {
+    "clientName": "María López",
+    "serviceId": "svc_123",
+    "startTime": "2025-03-15T17:00:00.000-08:00",
+    "notes": "Prefiere esmalte rojo"
+  }
   ```
-- **Dashboard (`Dashboard/.env`):**
-  ```env
-  VITE_API_URL=http://localhost:3000
-  VITE_PUBLIC_LANDING_URL=http://localhost:3001
+  Calcula `endTime` usando la duración del servicio y crea con estado `scheduled`.
+- `PUT /api/bookings/:id` → Actualiza cliente, servicio, fecha/hora y notas (recalcula `endTime`).
+- `PATCH /api/bookings/:id/status` → Body `{ status }` con los valores del enum.
+- `DELETE /api/bookings/:id` → Borra la cita.
+
+### Pagos
+- `GET /api/payments?from=&to=` → Devuelve `{ payments: [...], totalAmount }`. Cada pago incluye `booking.service` para mostrar contexto.
+- `POST /api/payments` → Body `{ bookingId, amount, method }`. Permite múltiples pagos por cita.
+
+### Inventario (Products)
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| GET | `/api/products` | Lista completa. |
+| GET | `/api/products/low-stock` | Productos con `stock <= lowStockThreshold`. |
+| POST | `/api/products` | Crea producto `{ name, price, stock, lowStockThreshold }`. |
+| PUT | `/api/products/:id` | Actualiza cantidades/precio. |
+| DELETE | `/api/products/:id` | Borra producto. |
+
+### Métricas
+- `GET /api/stats/overview` →
+  ```json
+  {
+    "todayBookings": { "scheduled": 2, "confirmed": 1, "done": 3, "canceled": 1 },
+    "monthlyRevenue": 1100,
+    "topServices": [ { "serviceId": "...", "name": "Extensión clásica", "count": 4 } ],
+    "lowStockProducts": 3
+  }
   ```
-- **Backend (`backend/.env`):**
-  ```env
-  DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/estetica
-  JWT_SECRET=tu_clave_segura
-  SESSION_COOKIE_DOMAIN= # opcional en dev
-  SESSION_COOKIE_NAME=   # opcional, default: salon_session
-  ```
-  En desarrollo las cookies se envían con `HttpOnly=true`, `Secure=false`, `SameSite=Lax`, `Path=/`.
+- `GET /api/stats/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD` → `{ series: [{ date: ISOString, amount }] }` para gráficas diarias.
 
-### Producción
-- `NODE_ENV=production` en los tres proyectos.
-- `SESSION_COOKIE_DOMAIN` apuntando al dominio público (por ejemplo `estetica.mx`).
-- Cookies con `Secure=true`, `HttpOnly=true`, `SameSite=Lax` (usar `None` sólo si compartes cookies entre subdominios con protección anti-CSRF adicional).
-- Proxy inverso sirviendo la web en HTTPS y reenviando `/api` al backend.
+## Dashboard: módulos y revalidación
+- **Servicios:** CRUD en modales. Actualiza la UI de forma optimista y luego fuerza `invalidateQuery('services')` + `stats` para sincronizar.
+- **Citas:** filtros rápidos (hoy, semana, todos) + cambio de estado, edición y borrado. Uso de actualizaciones optimistas y revalidación de todas las variantes (`bookings:time:status`, métricas y gráfica de ingresos).
+- **Pagos:** permite filtrar por fecha, ver total y registrar pagos (afecta `/api/payments`, métricas y gráfica). Formulario validado.
+- **Inventario:** tabla con resalte para stock bajo y filtro rápido. CRUD optimista + revalidación de métricas.
+- **Dashboard inicial:** tarjetas con citas del día, ingresos del mes, stock bajo y servicios top, además de gráfica diaria.
 
-## Entorno de desarrollo local
-1. **Backend**
-   ```bash
-   cd backend
-   npm install
-   npm run dev
-   ```
-   - Se expone en `http://localhost:3000`.
-   - CORS permite `http://localhost:3001` y `http://localhost:3003` con `credentials: true`.
-   - El login tiene rate limiting (5 intentos por IP por minuto) y logs mínimos sin datos sensibles.
+Cualquier 401 en una petición provoca el evento `dashboard:unauthorized` → el guard redirige a la Landing y limpia sesión.
 
-2. **Landing**
-   ```bash
-   cd Landing
-   npm install
-   npm run dev -- --port 3001
-   ```
-   - Todas las peticiones usan `fetch(..., { credentials: 'include' })`.
-   - Tras un login exitoso se redirige directo al Dashboard sin pasar tokens por URL.
+## Flujo E2E sugerido
+1. Aplicar migraciones y seed.
+2. Iniciar backend, Landing y Dashboard.
+3. Login en Landing con `admin@estetica.mx / changeme123` (crea cookie HttpOnly).
+4. En el Dashboard:
+   - Crear/editar/eliminar un servicio y observar el refetch automático.
+   - Agendar una cita, cambiarla de estado (confirmar/done/cancelar) y comprobar que la tarjeta de métricas se actualiza.
+   - Registrar un pago y validar que el total del rango y la gráfica cambian al instante.
+   - Ajustar inventario y verificar el contador de stock bajo.
+5. Cerrar sesión desde el header → cookie eliminada y redirección a la Landing.
 
-3. **Dashboard**
-   ```bash
-   cd Dashboard
-   npm install
-   npm run dev -- --port 3003
-   ```
-   - El guard se basa en `/api/me`; si responde 401 se redirige a la Landing.
-   - El header incorpora botón de “Cerrar sesión” que invoca `/api/logout`.
+## Ejemplos cURL
+```bash
+# Login (guardará la cookie en cookies.txt)
+curl -i -c cookies.txt -X POST http://localhost:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@estetica.mx","password":"changeme123"}'
 
-## Flujo de autenticación con cookies HttpOnly
-1. El MiniLoginModal envía `POST /api/login` con email y password.
-2. El backend responde 200, firma un JWT y lo setea en la cookie `salon_session` (HttpOnly, SameSite Lax).
-3. El frontend redirige al Dashboard (sin query params ni `localStorage`).
-4. El Dashboard llama `GET /api/me`; el middleware valida primero la cookie y, como fallback, un header `Authorization` existente.
-5. Para cerrar sesión se llama `POST /api/logout`, que invalida el cookie inmediatamente.
-6. `/api/health` permanece sin protección para checks externos.
+# Crear servicio
+token_cookie="cookies.txt"
+curl -b "$token_cookie" -X POST http://localhost:3000/api/services \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Nuevo servicio","price":350,"duration":60}'
 
-## Endpoints relevantes
-- **POST `/api/login`**
-  - Body: `{ "email": string, "password": string }`.
-  - Respuesta 200: `{ "token": string }` (sólo para compatibilidad); también envía `Set-Cookie` con el token.
-  - Errores: 400 (faltan campos), 401 (credenciales), 429 (rate limit).
-- **GET `/api/me`**
-  - Requiere la cookie de sesión o un header `Authorization: Bearer`.
-  - Respuesta 200: `{ "user": { id, email, name, role } }`.
-  - Respuesta 401: sesión inválida → el frontend redirige a la Landing.
-- **POST `/api/logout`**
-  - Siempre responde 204 y expira la cookie.
-- **GET `/api/health`**
-  - Público. Devuelve `{ ok: true, service, env }`.
+# Listar citas de la semana (zona America/Tijuana)
+curl -b "$token_cookie" "http://localhost:3000/api/bookings?from=$(date +%Y-%m-%d)&to=$(date -d '+7 day' +%Y-%m-%d)"
+```
 
-## Pruebas rápidas
-### Flujo E2E manual
-1. Levanta backend, Landing y Dashboard.
-2. Desde la Landing abre el MiniLoginModal y usa las credenciales seed `admin@estetica.mx / password123`.
-3. Comprueba en DevTools → Application → Cookies que existe `salon_session` para `http://localhost:3000`.
-4. Tras el éxito, la app redirige al Dashboard y `/api/me` responde 200.
-5. Pulsa “Cerrar sesión” en el header del Dashboard → regresa a la Landing y la cookie desaparece.
-6. Reintenta abrir el Dashboard directo: `/api/me` devuelve 401 y se redirige a la Landing.
-
-### Thunder Client / Postman
-1. `POST http://localhost:3000/api/login` con JSON `{ "email": "admin@estetica.mx", "password": "password123" }`. Activa “Send cookies” y revisa el encabezado `Set-Cookie`.
-2. `GET http://localhost:3000/api/me` reutilizando las cookies → responde 200.
-3. `POST http://localhost:3000/api/logout` → responde 204 y limpia la cookie.
-
-## Despliegue
-- Servir Landing y Dashboard desde el mismo host (por ejemplo `https://estetica.mx`).
-- Configurar el proxy inverso (Nginx, Caddy, etc.) para reenviar `/api` al backend Node (puerto 3000) y habilitar `proxy_set_header Host` para que las cookies respeten el dominio.
-- Forzar HTTPS: las cookies `Secure` requieren TLS.
-- Exportar variables:
-  ```bash
-  NODE_ENV=production
-  SESSION_COOKIE_DOMAIN=estetica.mx
-  SESSION_COOKIE_NAME=salon_session
-  ```
-- Construir las apps (`npm run build`) y servir los assets estáticos detrás del mismo dominio. El backend puede correr con `npm run start`.
-
-## Seguridad
-- **Cookies HttpOnly:** el token no es accesible desde JS, mitigando XSS.
-- **Compatibilidad progresiva:** se aceptan encabezados `Authorization` para clientes legados, pero la cookie tiene prioridad.
-- **Rate limiting de login:** bloquea bruteforce simple (5 req/min/IP).
-- **SameSite Lax:** protege del CSRF básico manteniendo el flujo de navegación normal. Si en el futuro se requieren solicitudes cross-site, añadir un token anti-CSRF antes de pasar `SameSite=None`.
-- **Logs mínimos:** sólo se registra un hash parcial del email y la IP.
-
-## Optimización de rendimiento en la Landing
-- Preconnect/preload a Google Fonts y Unsplash; eliminación de `@import` bloqueantes.
-- `loading="lazy"`, `decoding="async"`, dimensiones fijas y `fetchPriority` en imágenes críticas.
-- Uso de fuentes con `display=swap` y preload selectivo.
-- Conversión de assets remotos a WebP vía parámetros (`fm=webp`) y `sizes` responsivos.
-- Suspense + `React.lazy` para dividir código de secciones pesadas.
-- Limpieza de dependencias de `localStorage` y del query param `?auth`.
-
-## Resultados Lighthouse
-Mediciones locales con `npm run build && npx vite preview --host 0.0.0.0 --port 4173` y `lighthouse@12.1.0` (Chrome 131, Mac M2).
-
-| Métrica        | Antes | Después |
-| -------------- | :---: | :-----: |
-| Performance    | 78    | **92**  |
-| Best Practices | 93    | **97**  |
-| SEO            | 94    | **100** |
-
-> Para reproducir: `npx lighthouse http://localhost:4173 --quiet --chrome-flags="--headless"`.
+## Optimización Landing
+- Imágenes WebP/AVIF con `loading="lazy"`, `decoding="async"`, `width/height` definidos y `fetchpriority="high"` sólo para hero.
+- Fuentes con `display=swap` y preloads mínimos.
+- Code-splitting con `React.lazy` para secciones no críticas.
+- Sin `console.log` en build.
 
 ## Troubleshooting
-- **La cookie no aparece:** verifica que estés accediendo a través de `http://localhost:3001`/`3003`. Las cookies HttpOnly sólo se crean si la petición llega directamente al backend.
-- **CORS bloqueado:** confirma que el backend está en `3000` y que las apps llaman usando `VITE_API_URL` sin slash final. Todas las peticiones deben incluir `credentials: 'include'`.
-- **Secure en desarrollo:** si ves el error `ERR_SSL_PROTOCOL_ERROR`, revisa que `Secure=false` (por defecto cuando `NODE_ENV` ≠ `production`).
-- **Sesión atascada:** ejecuta `POST /api/logout` o elimina manualmente la cookie `salon_session` desde DevTools.
-- **Thunder Client no envía cookies:** asegúrate de activar “Send Cookies” y de no sobrescribir el header `Cookie` manualmente.
+- **Cookies ausentes:** revisar dominio/origen. Todas las llamadas deben usar `credentials: 'include'`.
+- **CORS bloqueado:** asegúrate de usar `VITE_API_URL` sin slash final y que el backend esté en 3000.
+- **`Secure` en local:** no habilitar `SESSION_COOKIE_DOMAIN` ni `NODE_ENV=production` sin TLS.
+- **Errores de validación (400):** el payload no cumple las reglas Zod (nombres ≤ 100 caracteres, precios > 0, duración 5–480, stock ≥ 0).
+- **Conflictos de migraciones:** ejecutar `npx prisma migrate resolve --applied <id>` y repetir `npm run prisma:migrate`.
 
-## Guía rápida de pruebas
-1. `npm run build` en `backend`, `Landing` y `Dashboard` para asegurar que todo compila.
-2. Lanzar los tres servidores en modo dev y seguir el flujo E2E descrito arriba.
-3. Ejecutar las llamadas de Thunder Client.
-4. Opcional: repetir Lighthouse tras cada optimización para validar que Performance ≥ 92, Best Practices ≥ 97 y SEO = 100.
+## Checklist de despliegue
+- [ ] Landing y Dashboard servidos bajo HTTPS en el mismo dominio.
+- [ ] Proxy inverso reenviando `/api` al backend y preservando encabezados (`Host`, `X-Forwarded-*`).
+- [ ] Variables `NODE_ENV=production`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_DOMAIN` (si aplica) y `JWT_SECRET` configuradas.
+- [ ] Cookie con `Secure=true`, `HttpOnly=true`, `SameSite=Lax`.
+- [ ] Ejecutar `npm run build` en Landing/Dashboard y servir los assets estáticos (Vite build).
+- [ ] Backend ejecutándose con `npm run start` (transpilado) y acceso a la base PostgreSQL migrada/sembrada.
+- [ ] Verificar con cURL/Thunder Client: login, `/api/me`, `/api/services`.

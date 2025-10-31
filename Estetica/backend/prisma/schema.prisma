@@ -10,7 +10,13 @@ datasource db {
 enum Role {
   ADMIN
   EMPLOYEE
-  CLIENT
+}
+
+enum AssignmentStatus {
+  pending
+  accepted
+  declined
+  expired
 }
 
 enum BookingStatus {
@@ -59,15 +65,19 @@ model Booking {
   endTime    DateTime
   status     BookingStatus @default(scheduled)
   notes      String?
+  assignedEmail String?
+  assignedAt    DateTime?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
   service Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   payments Payment[]
+  assignments Assignment[]
 
   @@index([startTime])
   @@index([status])
   @@index([serviceId])
+  @@index([assignedEmail])
 }
 
 model Payment {
@@ -94,4 +104,21 @@ model Product {
 
   @@index([name])
   @@index([stock])
+}
+
+model Assignment {
+  id         String           @id @default(cuid())
+  bookingId  String
+  email      String
+  status     AssignmentStatus @default(pending)
+  token      String           @unique
+  expiresAt  DateTime
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([expiresAt])
 }

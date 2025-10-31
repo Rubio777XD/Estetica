@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createHash, randomBytes } from 'crypto';
 import { z } from 'zod';
-import { BookingStatus, PaymentMethod, Prisma, Role } from '@prisma/client';
+import { AssignmentStatus, BookingStatus, PaymentMethod, Prisma, Role } from '@prisma/client';
 
 import { prisma } from './db';
 import { authJWT, AuthedRequest } from './authJWT';
@@ -21,6 +21,7 @@ import {
   startOfMonth,
   startOfToday,
 } from './utils/timezone';
+import { sendAssignmentEmail } from './utils/mailer';
 
 dotenv.config();
 
@@ -84,6 +85,91 @@ const normalizeNotes = (notes?: string | null) => {
     return trimmed.length > 0 ? trimmed : null;
   }
   return undefined;
+};
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
+const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
+
+const PUBLIC_API_URL =
+  process.env.PUBLIC_API_URL ||
+  process.env.PUBLIC_BACKEND_URL ||
+  process.env.PUBLIC_DASHBOARD_URL ||
+  process.env.PUBLIC_LANDING_URL ||
+  'http://localhost:3000';
+
+const buildAssignmentAcceptUrl = (token: string) => {
+  const base = PUBLIC_API_URL.replace(/\/$/, '');
+  return `${base}/api/assignments/accept?token=${encodeURIComponent(token)}`;
+};
+
+const renderAssignmentMessage = (title: string, description: string) => `<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f9fafb; color: #111827; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; }
+      .card { background: white; padding: 32px; border-radius: 16px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12); max-width: 480px; text-align: center; }
+      h1 { font-size: 1.75rem; margin-bottom: 16px; }
+      p { margin-bottom: 12px; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>${title}</h1>
+      <p>${description}</p>
+    </div>
+  </body>
+</html>`;
+
+const bookingDateFormatter = new Intl.DateTimeFormat('es-MX', {
+  timeZone: DEFAULT_TZ,
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+const assignmentPublicSelect = {
+  id: true,
+  bookingId: true,
+  email: true,
+  status: true,
+  expiresAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.AssignmentSelect;
+
+const expireStaleAssignments = async (bookingId?: string) => {
+  const now = new Date();
+  const where: Prisma.AssignmentWhereInput = {
+    status: AssignmentStatus.pending,
+    expiresAt: { lt: now },
+  };
+
+  if (bookingId) {
+    where.bookingId = bookingId;
+  }
+
+  const expired = await prisma.assignment.findMany({
+    where,
+    select: { id: true, bookingId: true },
+  });
+
+  if (!expired.length) {
+    return;
+  }
+
+  await prisma.assignment.updateMany({
+    where: { id: { in: expired.map((item) => item.id) } },
+    data: { status: AssignmentStatus.expired },
+  });
+
+  const affectedBookings = new Set(expired.map((item) => item.bookingId));
+  for (const booking of affectedBookings) {
+    broadcastEvent('booking:assignment:expired', { bookingId: booking }, 'auth');
+  }
 };
 
 const LOGIN_WINDOW_MS = 60_000;
@@ -166,6 +252,107 @@ app.get('/api/health', (_req, res) => {
     'API operativa'
   );
 });
+
+app.get(
+  '/api/assignments/accept',
+  asyncHandler(async (req, res) => {
+    const tokenParam = req.query.token;
+    const token = Array.isArray(tokenParam) ? tokenParam[0] : tokenParam;
+
+    if (!token || typeof token !== 'string') {
+      res.status(400).send(renderAssignmentMessage('Invitación inválida', 'El enlace proporcionado no es válido.'));
+      return;
+    }
+
+    const assignment = await prisma.assignment.findUnique({
+      where: { token },
+      include: { booking: { include: { service: true } } },
+    });
+
+    if (!assignment) {
+      res.status(404).send(renderAssignmentMessage('Invitación no encontrada', 'Esta invitación no existe o ya no está disponible.'));
+      return;
+    }
+
+    if (assignment.status === AssignmentStatus.declined) {
+      res
+        .status(410)
+        .send(renderAssignmentMessage('Invitación cancelada', 'La cita fue cancelada desde el panel y ya no puede aceptarse.'));
+      return;
+    }
+
+    if (assignment.status === AssignmentStatus.accepted) {
+      res
+        .status(200)
+        .send(
+          renderAssignmentMessage(
+            'Invitación ya aceptada',
+            'Esta invitación ya fue confirmada anteriormente. ¡Gracias por tu respuesta!'
+          )
+        );
+      return;
+    }
+
+    if (assignment.status === AssignmentStatus.expired) {
+      res
+        .status(410)
+        .send(renderAssignmentMessage('Invitación expirada', 'El enlace expiró. Solicita una nueva invitación desde el salón.'));
+      return;
+    }
+
+    if (assignment.expiresAt.getTime() <= Date.now()) {
+      await prisma.assignment.update({
+        where: { id: assignment.id },
+        data: { status: AssignmentStatus.expired },
+      });
+      broadcastEvent('booking:assignment:expired', { bookingId: assignment.bookingId }, 'auth');
+      res
+        .status(410)
+        .send(renderAssignmentMessage('Invitación expirada', 'El enlace expiró. Solicita una nueva invitación desde el salón.'));
+      return;
+    }
+
+    const { updatedAssignment, booking, expiredCount } = await prisma.$transaction(async (tx) => {
+      const updated = await tx.assignment.update({
+        where: { id: assignment.id },
+        data: { status: AssignmentStatus.accepted },
+      });
+
+      const updatedBooking = await tx.booking.update({
+        where: { id: assignment.bookingId },
+        data: { assignedEmail: assignment.email, assignedAt: new Date() },
+        include: { service: true },
+      });
+
+      const others = await tx.assignment.updateMany({
+        where: {
+          bookingId: assignment.bookingId,
+          status: AssignmentStatus.pending,
+          NOT: { id: assignment.id },
+        },
+        data: { status: AssignmentStatus.expired },
+      });
+
+      return { updatedAssignment: updated, booking: updatedBooking, expiredCount: others.count };
+    });
+
+    broadcastEvent('booking:assignment:accepted', { bookingId: booking.id, assignmentId: updatedAssignment.id }, 'auth');
+    broadcastEvent('booking:updated', { id: booking.id }, 'auth');
+    if (expiredCount > 0) {
+      broadcastEvent('booking:assignment:expired', { bookingId: booking.id }, 'auth');
+    }
+
+    const summary = bookingDateFormatter.format(booking.startTime);
+    res
+      .status(200)
+      .send(
+        renderAssignmentMessage(
+          '¡Invitación aceptada!',
+          `Confirmaste la cita de ${booking.clientName} para ${booking.service?.name ?? 'servicio'} el ${summary}. ¡Gracias!`
+        )
+      );
+  })
+);
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -419,6 +606,11 @@ const bookingStatusSchema = z.object({
   }),
 });
 
+const assignmentCreateSchema = z.object({
+  bookingId: z.string().cuid(),
+  email: z.string().email(),
+});
+
 const bookingQuerySchema = z.object({
   from: z
     .string()
@@ -443,6 +635,8 @@ protectedRouter.get(
     const { from, to, status, limit } = parsed.data;
     const where: Prisma.BookingWhereInput = {};
 
+    await expireStaleAssignments();
+
     if (status) {
       where.status = status;
     }
@@ -465,6 +659,28 @@ protectedRouter.get(
     });
 
     return sendSuccess(res, { bookings }, 'Citas recuperadas');
+  })
+);
+
+protectedRouter.get(
+  '/bookings/unassigned',
+  asyncHandler(async (_req, res) => {
+    await expireStaleAssignments();
+
+    const bookings = await prisma.booking.findMany({
+      where: { assignedEmail: null },
+      orderBy: { startTime: 'asc' },
+      include: {
+        service: true,
+        assignments: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: assignmentPublicSelect,
+        },
+      },
+    });
+
+    return sendSuccess(res, { bookings }, 'Citas sin asignar');
   })
 );
 
@@ -598,6 +814,106 @@ protectedRouter.delete(
     broadcastEvent('booking:deleted', { id: req.params.id }, 'auth');
     broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
     return sendSuccess(res, { deleted: true }, 'Cita eliminada');
+  })
+);
+
+protectedRouter.post(
+  '/assignments',
+  asyncHandler(async (req, res) => {
+    const parsed = assignmentCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
+    }
+
+    const { bookingId, email } = parsed.data;
+    const normalizedEmail = normalizeEmail(email);
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { service: true },
+    });
+
+    if (!booking) {
+      throw new HttpError(404, 'Cita no encontrada');
+    }
+
+    if (booking.assignedEmail) {
+      throw new HttpError(409, 'La cita ya está asignada');
+    }
+
+    await expireStaleAssignments(bookingId);
+
+    const existingPending = await prisma.assignment.findFirst({
+      where: { bookingId, status: AssignmentStatus.pending },
+    });
+
+    if (existingPending) {
+      throw new HttpError(409, 'Ya existe una invitación pendiente para esta cita');
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + ASSIGNMENT_EXPIRATION_MS);
+
+    const assignment = await prisma.assignment.create({
+      data: {
+        bookingId,
+        email: normalizedEmail,
+        token,
+        expiresAt,
+      },
+      select: assignmentPublicSelect,
+    });
+
+    const acceptUrl = buildAssignmentAcceptUrl(token);
+
+    try {
+      await sendAssignmentEmail({
+        to: normalizedEmail,
+        clientName: booking.clientName,
+        serviceName: booking.service.name,
+        start: booking.startTime,
+        end: booking.endTime,
+        notes: booking.notes,
+        acceptUrl,
+        expiresAt,
+      });
+    } catch (error) {
+      console.error('[assignments] error enviando invitación', { bookingId, error });
+      await prisma.assignment.delete({ where: { id: assignment.id } }).catch(() => undefined);
+      throw new HttpError(502, 'No fue posible enviar la invitación');
+    }
+
+    broadcastEvent('booking:assignment:sent', { bookingId, assignmentId: assignment.id }, 'auth');
+
+    return sendSuccess(res, { assignment }, 'Invitación enviada', 201);
+  })
+);
+
+protectedRouter.delete(
+  '/assignments/:id',
+  asyncHandler(async (req, res) => {
+    const assignment = await prisma.assignment.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, bookingId: true, status: true },
+    });
+
+    if (!assignment) {
+      throw new HttpError(404, 'Invitación no encontrada');
+    }
+
+    if (assignment.status !== AssignmentStatus.pending) {
+      throw new HttpError(409, 'La invitación ya no se puede cancelar');
+    }
+
+    const updated = await prisma.assignment.update({
+      where: { id: assignment.id },
+      data: { status: AssignmentStatus.declined },
+      select: assignmentPublicSelect,
+    });
+
+    broadcastEvent('booking:assignment:cancelled', { bookingId: updated.bookingId, assignmentId: updated.id }, 'auth');
+
+    return sendSuccess(res, { assignment: updated }, 'Invitación cancelada');
   })
 );
 

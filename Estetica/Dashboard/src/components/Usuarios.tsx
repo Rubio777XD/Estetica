@@ -21,7 +21,6 @@ const USERS_KEY = 'users';
 const ROLE_OPTIONS: { label: string; value: UserRole }[] = [
   { label: 'Administración', value: 'ADMIN' },
   { label: 'Empleado', value: 'EMPLOYEE' },
-  { label: 'Cliente', value: 'CLIENT' },
 ];
 
 interface FormState {

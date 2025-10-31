@@ -16,8 +16,20 @@ SESSION_COOKIE_DOMAIN= # opcional, establece el dominio en producción
 BOOTSTRAP_ADMIN_EMAIL=admin@local.dev # opcional
 BOOTSTRAP_ADMIN_NAME=Administrador Autogenerado # opcional
 BOOTSTRAP_ADMIN_PASSWORD= # opcional (aleatoria si se omite)
+PUBLIC_API_URL=http://localhost:3000 # URL pública para enlaces de invitación
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=usuario@example.com
+SMTP_PASS=super_secreta
+SMTP_SECURE=false # opcional (usa true o puerto 465 para TLS implícito)
+MAIL_FROM="JR Studio <no-reply@example.com>" # opcional
+MAIL_TIME_ZONE=America/Tijuana # opcional, formato TZ IANA
+RESEND_API_KEY= # opcional, usa API HTTP de Resend en vez de SMTP
+RESEND_API_URL=https://api.resend.com # opcional
 ```
 - En desarrollo la cookie se emite con `Secure=false`, `SameSite=Lax` y `HttpOnly=true`. En producción el proxy debe estar en HTTPS para habilitar `Secure=true`.
+- Si las variables SMTP no se configuran, los correos se registran en consola (modo mock) pero no se envían.
+  - Alternativamente, define `RESEND_API_KEY` para enviar correos mediante la API de Resend.
 
 ### Dashboard (`Dashboard/.env`)
 ```env
@@ -34,10 +46,11 @@ VITE_PUBLIC_DASHBOARD_URL=http://localhost:3003
 ## Base de datos y Prisma
 Modelos principales (ver `backend/prisma/schema.prisma`):
 - **Service:** `id`, `name`, `price`, `duration`, `description?`, `imageUrl?`, `highlights[]`, `createdAt`, `updatedAt`.
-- **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status` (`scheduled`, `confirmed`, `done`, `canceled`), `notes`, `createdAt`, `updatedAt`.
+- **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status`, `notes`, `assignedEmail?`, `assignedAt?`, `createdAt`, `updatedAt`, relación con `assignments[]` y `payments[]`.
 - **Payment:** `id`, `bookingId`, `amount`, `method` (`cash`, `transfer`), `createdAt`.
 - **Product:** `id`, `name`, `price`, `stock`, `lowStockThreshold`, `createdAt`, `updatedAt`.
-- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`). Roles permitidos: `ADMIN`, `EMPLOYEE`, `CLIENT`.
+- **Assignment:** historial de invitaciones a colaboradoras (`id`, `bookingId`, `email`, `status` `pending|accepted|declined|expired`, `token`, `expiresAt`, `createdAt`, `updatedAt`).
+- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`). Roles permitidos: `ADMIN`, `EMPLOYEE`.
 
 ### Migraciones y seed
 ```bash
@@ -97,6 +110,7 @@ para compatibilidad con los clientes existentes.
 ### Citas (Bookings)
 - `GET /api/bookings?from=YYYY-MM-DD&to=YYYY-MM-DD&status=scheduled|confirmed|done|canceled&limit=200`
   - Filtra por rango (en zona `America/Tijuana`) y estado. Devuelve `{ bookings: Booking[] }` con `service` y `payments` embebidos.
+- `GET /api/bookings/unassigned` → Sólo citas sin `assignedEmail`. Incluye el servicio y las últimas invitaciones (`assignments`) ordenadas de forma descendente.
 - `POST /api/bookings`
   ```json
   {
@@ -110,6 +124,12 @@ para compatibilidad con los clientes existentes.
 - `PUT /api/bookings/:id` → Actualiza cliente, servicio, fecha/hora y notas (recalcula `endTime`).
 - `PATCH /api/bookings/:id/status` → Body `{ status }` con los valores del enum.
 - `DELETE /api/bookings/:id` → Borra la cita.
+- Cada cita incluye `assignedEmail` y `assignedAt` para reflejar si alguna colaboradora aceptó la invitación más reciente.
+
+### Asignaciones de colaboradoras
+- `POST /api/assignments` → Body `{ bookingId, email }`. Crea una invitación (estado `pending`) con vencimiento a 24 h, envía correo y emite SSE `booking:assignment:sent`.
+- `DELETE /api/assignments/:id` → Marca la invitación como `declined` (cancelada) y emite `booking:assignment:cancelled`.
+- `GET /api/assignments/accept?token=...` → Endpoint público que valida el token, marca la invitación como `accepted`, asigna la cita (`assignedEmail`/`assignedAt`) y expira otras invitaciones.
 
 ### Pagos
 - `GET /api/payments?from=&to=` → Devuelve `{ payments: [...], totalAmount }`. Cada pago incluye `booking.service` para mostrar contexto.
@@ -125,14 +145,14 @@ para compatibilidad con los clientes existentes.
 | DELETE | `/api/products/:id` | Borra producto. |
 
 ### Tiempo real
-- `GET /api/events` → SSE autenticado (`withCredentials`). Emite `service:*`, `booking:*`, `payment:created`,
+- `GET /api/events` → SSE autenticado (`withCredentials`). Emite `service:*`, `booking:*`, `booking:assignment:*`, `payment:created`,
   `payments:invalidate`, `product:*` y `stats:invalidate` para que el dashboard refresque automáticamente queries y métricas.
 
 ### Usuarios (sólo ADMIN)
 | Método | Ruta | Descripción |
 | ------ | ---- | ----------- |
 | GET | `/api/users` | Lista usuarios registrados con rol y fecha de creación. |
-| POST | `/api/users` | Crea usuario `{ email, password, role, name? }`. Valida duplicados y asigna roles `ADMIN`, `EMPLOYEE` o `CLIENT`. |
+| POST | `/api/users` | Crea usuario `{ email, password, role, name? }`. Valida duplicados y asigna roles `ADMIN` o `EMPLOYEE`. |
 
 ### Métricas
 - `GET /api/stats/overview` →
@@ -149,6 +169,7 @@ para compatibilidad con los clientes existentes.
 ## Dashboard: módulos y revalidación
 - **Servicios:** CRUD en modales. Actualiza la UI de forma optimista y, gracias al SSE, fuerza la revalidación automática de `services`, métricas y agendas relacionadas.
 - **Citas:** filtros rápidos (hoy, semana, todos) + cambio de estado, edición y borrado. Uso de actualizaciones optimistas y revalidación de todas las variantes (`bookings:time:status`, métricas y gráfica de ingresos).
+- **Citas pendientes:** vista dedicada a citas sin asignar. Permite enviar, cancelar o reenviar invitaciones; se sincroniza con los eventos `booking:assignment:*` para reflejar expiraciones y aceptaciones al instante.
 - **Pagos:** permite filtrar por fecha, ver total y registrar pagos (afecta `/api/payments`, métricas y gráfica). Formulario validado.
 - **Inventario:** tabla con resalte para stock bajo y filtro rápido. CRUD optimista + revalidación de métricas.
 - **Dashboard inicial:** tarjetas con citas del día, ingresos del mes, stock bajo y servicios top, además de gráfica diaria.

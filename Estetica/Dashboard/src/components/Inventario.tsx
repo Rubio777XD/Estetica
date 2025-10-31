@@ -1,608 +1,413 @@
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Package, AlertTriangle, Plus, Edit, Search, Filter, TrendingDown, Box } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Package, AlertTriangle, Plus, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Label } from './ui/label';
+
+import { apiFetch, ApiError } from '../lib/api';
+import { formatCurrency } from '../lib/format';
+import { invalidateQuery, setQueryData, useApiQuery } from '../lib/data-store';
+import type { Product, ProductsResponse } from '../types/api';
+
+const PRODUCTS_KEY = 'products';
+
+type ProductFormState = {
+  name: string;
+  price: string;
+  stock: string;
+  lowStockThreshold: string;
+};
+
+const EMPTY_FORM: ProductFormState = {
+  name: '',
+  price: '',
+  stock: '',
+  lowStockThreshold: '0',
+};
+
 export default function Inventario() {
-  const [busqueda, setBusqueda] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('todos');
-  const [filtroEstado, setFiltroEstado] = useState('todos');
-  const [dialogNuevoOpen, setDialogNuevoOpen] = useState(false);
-  const [dialogEditarOpen, setDialogEditarOpen] = useState(false);
-  const [dialogStockOpen, setDialogStockOpen] = useState(false);
-  const [productoEditando, setProductoEditando] = useState<any>(null);
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [form, setForm] = useState<ProductFormState>(EMPTY_FORM);
+  const [productEditing, setProductEditing] = useState<Product | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const productos = [
-    {
-      id: 1,
-      nombre: 'Esmalte OPI Classic Red',
-      categoria: 'esmaltes',
-      tipo: 'esmalte tradicional',
-      cantidad: 12,
-      minimo: 5,
-      maximo: 20,
-      precioCompra: 18000,
-      precioVenta: 25000,
-      proveedor: 'Distribuidora Belleza',
-      fechaVencimiento: '2026-08-15',
-      ubicacion: 'Estante A-1',
-      estado: 'disponible'
-    },
-    {
-      id: 2,
-      nombre: 'Gel Semipermanente CND Shellac',
-      categoria: 'geles',
-      tipo: 'gel semipermanente',
-      cantidad: 3,
-      minimo: 8,
-      maximo: 15,
-      precioCompra: 35000,
-      precioVenta: 50000,
-      proveedor: 'Professional Nails',
-      fechaVencimiento: '2025-12-20',
-      ubicacion: 'Refrigerador R-1',
-      estado: 'agotandose'
-    },
-    {
-      id: 3,
-      nombre: 'Lima de Uñas Professional 180/240',
-      categoria: 'herramientas',
-      tipo: 'lima',
-      cantidad: 25,
-      minimo: 10,
-      maximo: 30,
-      precioCompra: 2500,
-      precioVenta: 4000,
-      proveedor: 'Herramientas Spa',
-      fechaVencimiento: null,
-      ubicacion: 'Cajón H-2',
-      estado: 'disponible'
-    },
-    {
-      id: 4,
-      nombre: 'Acetona Pura 500ml',
-      categoria: 'quimicos',
-      tipo: 'removedor',
-      cantidad: 0,
-      minimo: 6,
-      maximo: 12,
-      precioCompra: 8000,
-      precioVenta: 12000,
-      proveedor: 'Químicos Industriales',
-      fechaVencimiento: '2025-10-30',
-      ubicacion: 'Almacén Q-1',
-      estado: 'agotado'
-    },
-    {
-      id: 5,
-      nombre: 'Pestañas Individuales Volumen 0.07',
-      categoria: 'pestanas',
-      tipo: 'extensiones',
-      cantidad: 8,
-      minimo: 5,
-      maximo: 15,
-      precioCompra: 45000,
-      precioVenta: 65000,
-      proveedor: 'Lash Beauty Supply',
-      fechaVencimiento: null,
-      ubicacion: 'Vitrina P-1',
-      estado: 'disponible'
-    },
-    {
-      id: 6,
-      nombre: 'Pegamento para Pestañas Premium',
-      categoria: 'pestanas',
-      tipo: 'adhesivo',
-      cantidad: 2,
-      minimo: 4,
-      maximo: 8,
-      precioCompra: 32000,
-      precioVenta: 48000,
-      proveedor: 'Lash Beauty Supply',
-      fechaVencimiento: '2025-11-15',
-      ubicacion: 'Refrigerador R-2',
-      estado: 'agotandose'
-    },
-    {
-      id: 7,
-      nombre: 'Crema Hidratante para Cutículas',
-      categoria: 'cuidado',
-      tipo: 'tratamiento',
-      cantidad: 15,
-      minimo: 8,
-      maximo: 20,
-      precioCompra: 12000,
-      precioVenta: 18000,
-      proveedor: 'Cosméticos Natural',
-      fechaVencimiento: '2026-03-10',
-      ubicacion: 'Estante C-1',
-      estado: 'disponible'
-    },
-    {
-      id: 8,
-      nombre: 'Decoraciones de Uñas Strass Mix',
-      categoria: 'decoraciones',
-      tipo: 'adorno',
-      cantidad: 50,
-      minimo: 20,
-      maximo: 100,
-      precioCompra: 500,
-      precioVenta: 1000,
-      proveedor: 'Arte y Belleza',
-      fechaVencimiento: null,
-      ubicacion: 'Cajón D-1',
-      estado: 'disponible'
+  const { data: products = [], status, error, refetch } = useApiQuery<Product[]>(
+    PRODUCTS_KEY,
+    async () => {
+      const response = await apiFetch<ProductsResponse>('/api/products');
+      return response.products;
     }
-  ];
+  );
 
-  const categorias = [
-    { id: 'todos', nombre: 'Todas las Categorías' },
-    { id: 'esmaltes', nombre: 'Esmaltes' },
-    { id: 'geles', nombre: 'Geles' },
-    { id: 'herramientas', nombre: 'Herramientas' },
-    { id: 'quimicos', nombre: 'Químicos' },
-    { id: 'pestanas', nombre: 'Pestañas' },
-    { id: 'cuidado', nombre: 'Cuidado' },
-    { id: 'decoraciones', nombre: 'Decoraciones' }
-  ];
+  const lowStockProducts = useMemo(() => products.filter((product) => product.stock <= product.lowStockThreshold), [products]);
+  const productosMostrados = showLowStockOnly ? lowStockProducts : products;
 
-  const estadisticas = {
-    totalProductos: productos.length,
-    agotados: productos.filter(p => p.estado === 'agotado').length,
-    agotandose: productos.filter(p => p.estado === 'agotandose').length,
-    valorInventario: productos.reduce((acc, p) => acc + (p.cantidad * p.precioCompra), 0)
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setProductEditing(null);
   };
 
-  const productosFiltrados = productos.filter(producto => {
-    const coincideBusqueda = 
-      producto.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      producto.tipo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      producto.proveedor.toLowerCase().includes(busqueda.toLowerCase());
-    
-    const coincideCategoria = filtroCategoria === 'todos' || producto.categoria === filtroCategoria;
-    const coincideEstado = filtroEstado === 'todos' || producto.estado === filtroEstado;
-    
-    return coincideBusqueda && coincideCategoria && coincideEstado;
-  });
+  const handleCreateProduct = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    const payload = {
+      name: form.name.trim(),
+      price: Number(form.price),
+      stock: Number(form.stock),
+      lowStockThreshold: Number(form.lowStockThreshold),
+    };
 
-  const formatearPrecio = (precio: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(precio);
-  };
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticProduct: Product = {
+      id: optimisticId,
+      name: payload.name,
+      price: payload.price,
+      stock: payload.stock,
+      lowStockThreshold: payload.lowStockThreshold,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-  const formatearFecha = (fecha: string | null) => {
-    if (!fecha) return 'No aplica';
-    return new Date(fecha).toLocaleDateString('es-CO');
-  };
+    setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => [...prev, optimisticProduct]);
 
-  const getEstadoColor = (estado: string) => {
-    switch (estado) {
-      case 'disponible':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'agotandose':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'agotado':
-        return 'bg-red-100 text-red-800 border-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+    try {
+      const { product } = await apiFetch<{ product: Product }>('/api/products', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => prev.map((item) => (item.id === optimisticId ? product : item)));
+      toast.success('Producto agregado');
+      setDialogOpen(false);
+      resetForm();
+    } catch (err) {
+      setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => prev.filter((item) => item.id !== optimisticId));
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible crear el producto');
+    } finally {
+      setIsSubmitting(false);
+      invalidateQuery([PRODUCTS_KEY, 'stats-overview']);
     }
   };
 
-  const getEstadoIcon = (producto: any) => {
-    if (producto.cantidad === 0) return <AlertTriangle className="h-4 w-4 text-red-500" />;
-    if (producto.cantidad <= producto.minimo) return <TrendingDown className="h-4 w-4 text-yellow-500" />;
-    return <Package className="h-4 w-4 text-green-500" />;
+  const handleUpdateProduct = async () => {
+    if (!productEditing || isSubmitting) return;
+    setIsSubmitting(true);
+    const payload = {
+      name: form.name.trim(),
+      price: Number(form.price),
+      stock: Number(form.stock),
+      lowStockThreshold: Number(form.lowStockThreshold),
+    };
+
+    const previous = productEditing;
+    setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) =>
+      prev.map((item) => (item.id === productEditing.id ? { ...item, ...payload, updatedAt: new Date().toISOString() } : item))
+    );
+
+    try {
+      const { product } = await apiFetch<{ product: Product }>(`/api/products/${productEditing.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => prev.map((item) => (item.id === product.id ? product : item)));
+      toast.success('Producto actualizado');
+      setEditDialogOpen(false);
+      resetForm();
+    } catch (err) {
+      setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => prev.map((item) => (item.id === previous.id ? previous : item)));
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible actualizar el producto');
+    } finally {
+      setIsSubmitting(false);
+      invalidateQuery([PRODUCTS_KEY, 'stats-overview']);
+    }
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    const previous = products;
+    setQueryData<Product[]>(PRODUCTS_KEY, (prev = []) => prev.filter((item) => item.id !== product.id));
+    try {
+      await apiFetch(`/api/products/${product.id}`, { method: 'DELETE' });
+      toast.success('Producto eliminado');
+    } catch (err) {
+      setQueryData<Product[]>(PRODUCTS_KEY, () => previous);
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible eliminar el producto');
+    } finally {
+      invalidateQuery([PRODUCTS_KEY, 'stats-overview']);
+    }
+  };
+
+  const openEditDialog = (product: Product) => {
+    setProductEditing(product);
+    setForm({
+      name: product.name,
+      price: String(product.price),
+      stock: String(product.stock),
+      lowStockThreshold: String(product.lowStockThreshold),
+    });
+    setEditDialogOpen(true);
+  };
+
+  const isFormValid =
+    form.name.trim().length > 0 &&
+    Number(form.price) >= 0 &&
+    Number(form.stock) >= 0 &&
+    Number(form.lowStockThreshold) >= 0;
+
+  const renderContent = () => {
+    if (status === 'loading') {
+      return (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index} className="animate-pulse">
+              <CardContent className="p-6 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-1/2" />
+                <div className="h-3 bg-gray-100 rounded w-3/4" />
+                <div className="h-3 bg-gray-100 rounded w-1/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      );
+    }
+
+    if (status === 'error') {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <p className="text-sm text-gray-600">{error instanceof Error ? error.message : 'No fue posible cargar el inventario.'}</p>
+          <Button variant="outline" onClick={() => refetch()}>
+            Reintentar
+          </Button>
+        </div>
+      );
+    }
+
+    if (productosMostrados.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <Package className="h-10 w-10 text-gray-400" />
+          <div>
+            <p className="font-medium text-gray-700">No hay productos en el inventario</p>
+            <p className="text-sm text-gray-500">Agrega un nuevo producto para empezar.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Umbral</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actualizado</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {productosMostrados.map((product) => {
+              const isLowStock = product.stock <= product.lowStockThreshold;
+              return (
+                <tr key={product.id} className={isLowStock ? 'bg-red-50/60' : undefined}>
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{product.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(product.price)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    <span className={isLowStock ? 'font-semibold text-red-600' : ''}>{product.stock}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{product.lowStockThreshold}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{new Date(product.updatedAt).toLocaleDateString('es-MX')}</td>
+                  <td className="px-4 py-3 text-sm text-right space-x-2">
+                    <Button variant="outline" size="icon" onClick={() => openEditDialog(product)} aria-label="Editar producto">
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-500 hover:text-red-600"
+                      onClick={() => handleDeleteProduct(product)}
+                      aria-label="Eliminar producto"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
   };
 
   return (
     <div className="space-y-6">
-      {/* Estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Productos</p>
-                <p className="text-2xl font-bold">{estadisticas.totalProductos}</p>
-              </div>
-              <Package className="h-8 w-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Productos Agotados</p>
-                <p className="text-2xl font-bold text-red-600">{estadisticas.agotados}</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Stock Bajo</p>
-                <p className="text-2xl font-bold text-yellow-600">{estadisticas.agotandose}</p>
-              </div>
-              <TrendingDown className="h-8 w-8 text-yellow-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Controles y Filtros */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex flex-col sm:flex-row gap-4 flex-1">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Buscar productos..."
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          <Select value={filtroCategoria} onValueChange={setFiltroCategoria}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {categorias.map((categoria) => (
-                <SelectItem key={categoria.id} value={categoria.id}>
-                  {categoria.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="disponible">Disponible</SelectItem>
-              <SelectItem value="agotandose">Stock Bajo</SelectItem>
-              <SelectItem value="agotado">Agotado</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showLowStockOnly ? 'default' : 'outline'}
+            onClick={() => setShowLowStockOnly((prev) => !prev)}
+            className={showLowStockOnly ? 'bg-black text-white' : ''}
+          >
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            {showLowStockOnly ? 'Ver todo el inventario' : 'Mostrar stock bajo'}
+          </Button>
+          <span className="text-sm text-gray-600">{lowStockProducts.length} productos con stock bajo</span>
         </div>
-
-        <Dialog open={dialogNuevoOpen} onOpenChange={setDialogNuevoOpen}>
+        <Dialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) {
+              resetForm();
+            }
+          }}
+        >
           <DialogTrigger asChild>
-            <Button className="bg-black hover:bg-gray-800">
-              <Plus className="h-4 w-4 mr-2" />
-              Agregar Producto
+            <Button className="bg-black hover:bg-gray-900">
+              <Plus className="h-4 w-4 mr-2" /> Nuevo producto
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-xl">
             <DialogHeader>
-              <DialogTitle>Agregar Nuevo Producto</DialogTitle>
-              <DialogDescription>
-                Registra un nuevo producto en el inventario del salón
-              </DialogDescription>
+              <DialogTitle>Registrar producto</DialogTitle>
+              <DialogDescription>Agrega un producto al inventario para monitorear su disponibilidad.</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium">Nombre del Producto</label>
-                <Input placeholder="Ej: Esmalte OPI Red" />
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="product-name">Nombre</Label>
+                <Input
+                  id="product-name"
+                  value={form.name}
+                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="Removedor de esmalte"
+                />
               </div>
-              <div>
-                <label className="text-sm font-medium">Categoría</label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categorias.slice(1).map((categoria) => (
-                      <SelectItem key={categoria.id} value={categoria.id}>
-                        {categoria.nombre}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="product-price">Precio</Label>
+                  <Input
+                    id="product-price"
+                    type="number"
+                    min="0"
+                    step="10"
+                    value={form.price}
+                    onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-stock">Stock</Label>
+                  <Input
+                    id="product-stock"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.stock}
+                    onChange={(event) => setForm((prev) => ({ ...prev, stock: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-low">Umbral</Label>
+                  <Input
+                    id="product-low"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.lowStockThreshold}
+                    onChange={(event) => setForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium">Tipo de Material</label>
-                <Input placeholder="Ej: Esmalte tradicional" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Proveedor</label>
-                <Input placeholder="Nombre del proveedor" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Cantidad Inicial</label>
-                <Input placeholder="0" type="number" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Stock Mínimo</label>
-                <Input placeholder="5" type="number" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Precio de Compra</label>
-                <Input placeholder="15000" type="number" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Precio de Venta</label>
-                <Input placeholder="25000" type="number" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Ubicación</label>
-                <Input placeholder="Ej: Estante A-1" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Fecha de Vencimiento</label>
-                <Input type="date" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-sm font-medium">Notas</label>
-                <Textarea placeholder="Notas adicionales sobre el producto..." />
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateProduct} disabled={!isFormValid || isSubmitting}>
+                  Guardar
+                </Button>
               </div>
             </div>
-            <div className="flex justify-end space-x-2 mt-4">
-              <Button variant="outline" onClick={() => setDialogNuevoOpen(false)}>Cancelar</Button>
-              <Button 
-                className="bg-black hover:bg-gray-800"
-                onClick={() => {
-                  toast.success('Producto agregado al inventario');
-                  setDialogNuevoOpen(false);
-                }}
-              >
-                Guardar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog para editar producto */}
-        <Dialog open={dialogEditarOpen} onOpenChange={setDialogEditarOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Editar Producto</DialogTitle>
-              <DialogDescription>
-                Actualiza la información del producto seleccionado
-              </DialogDescription>
-            </DialogHeader>
-            {productoEditando && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Nombre del Producto</label>
-                  <Input defaultValue={productoEditando.nombre} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Stock Mínimo</label>
-                  <Input defaultValue={productoEditando.minimo} type="number" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Precio de Compra</label>
-                  <Input defaultValue={productoEditando.precioCompra} type="number" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Precio de Venta</label>
-                  <Input defaultValue={productoEditando.precioVenta} type="number" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-sm font-medium">Proveedor</label>
-                  <Input defaultValue={productoEditando.proveedor} />
-                </div>
-                <div className="col-span-2 flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setDialogEditarOpen(false)}>Cancelar</Button>
-                  <Button 
-                    className="bg-black hover:bg-gray-800"
-                    onClick={() => {
-                      toast.success('Producto actualizado exitosamente');
-                      setDialogEditarOpen(false);
-                    }}
-                  >
-                    Guardar Cambios
-                  </Button>
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog para agregar stock */}
-        <Dialog open={dialogStockOpen} onOpenChange={setDialogStockOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Agregar Stock</DialogTitle>
-              <DialogDescription>
-                Incrementa la cantidad disponible del producto
-              </DialogDescription>
-            </DialogHeader>
-            {productoEditando && (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Producto</label>
-                  <p className="text-sm text-gray-600">{productoEditando.nombre}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Stock Actual</label>
-                  <p className="text-sm font-semibold">{productoEditando.cantidad} unidades</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-2">Cantidad a Agregar</label>
-                  <Input type="number" placeholder="0" min="1" />
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setDialogStockOpen(false)}>Cancelar</Button>
-                  <Button 
-                    className="bg-blue-600 hover:bg-blue-700"
-                    onClick={() => {
-                      toast.success('Stock actualizado exitosamente');
-                      setDialogStockOpen(false);
-                    }}
-                  >
-                    Agregar Stock
-                  </Button>
-                </div>
-              </div>
-            )}
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Alertas de Stock */}
-      {(estadisticas.agotados > 0 || estadisticas.agotandose > 0) && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="font-medium text-yellow-800">Atención requerida en inventario</p>
-                <p className="text-sm text-yellow-700">
-                  {estadisticas.agotados > 0 && `${estadisticas.agotados} productos agotados`}
-                  {estadisticas.agotados > 0 && estadisticas.agotandose > 0 && ', '}
-                  {estadisticas.agotandose > 0 && `${estadisticas.agotandose} productos con stock bajo`}
-                </p>
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            resetForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Editar producto</DialogTitle>
+            <DialogDescription>Actualiza los datos del producto seleccionado.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-product-name">Nombre</Label>
+              <Input
+                id="edit-product-name"
+                value={form.name}
+                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-product-price">Precio</Label>
+                <Input
+                  id="edit-product-price"
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={form.price}
+                  onChange={(event) => setForm((prev) => ({ ...prev, price: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-product-stock">Stock</Label>
+                <Input
+                  id="edit-product-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.stock}
+                  onChange={(event) => setForm((prev) => ({ ...prev, stock: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-product-low">Umbral</Label>
+                <Input
+                  id="edit-product-low"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.lowStockThreshold}
+                  onChange={(event) => setForm((prev) => ({ ...prev, lowStockThreshold: event.target.value }))}
+                />
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tabla de Inventario */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Inventario de Productos</span>
-            <Badge variant="outline">{productosFiltrados.length} productos</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Producto</TableHead>
-                  <TableHead>Categoría</TableHead>
-                  <TableHead>Stock</TableHead>
-                  <TableHead>Precios</TableHead>
-                  <TableHead>Proveedor</TableHead>
-                  <TableHead>Ubicación</TableHead>
-                  <TableHead>Vencimiento</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {productosFiltrados.map((producto) => (
-                  <TableRow key={producto.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        {getEstadoIcon(producto)}
-                        <div>
-                          <p className="font-medium">{producto.nombre}</p>
-                          <p className="text-sm text-gray-600">{producto.tipo}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {producto.categoria}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <p className="font-medium">{producto.cantidad} unidades</p>
-                        <p className="text-xs text-gray-500">
-                          Mín: {producto.minimo} | Máx: {producto.maximo}
-                        </p>
-                        <div className="w-full bg-gray-200 rounded-full h-1">
-                          <div 
-                            className={`h-1 rounded-full ${
-                              producto.cantidad <= producto.minimo 
-                                ? 'bg-red-500' 
-                                : producto.cantidad <= producto.minimo * 1.5 
-                                  ? 'bg-yellow-500' 
-                                  : 'bg-green-500'
-                            }`}
-                            style={{ 
-                              width: `${Math.min((producto.cantidad / producto.maximo) * 100, 100)}%` 
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <p className="text-sm">
-                          <span className="text-gray-600">Compra:</span> {formatearPrecio(producto.precioCompra)}
-                        </p>
-                        <p className="text-sm">
-                          <span className="text-gray-600">Venta:</span> {formatearPrecio(producto.precioVenta)}
-                        </p>
-                        <p className="text-xs text-green-600">
-                          Margen: {Math.round(((producto.precioVenta - producto.precioCompra) / producto.precioCompra) * 100)}%
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{producto.proveedor}</TableCell>
-                    <TableCell className="text-sm">{producto.ubicacion}</TableCell>
-                    <TableCell className="text-sm">
-                      {formatearFecha(producto.fechaVencimiento)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getEstadoColor(producto.estado)}>
-                        {producto.estado}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            setProductoEditando(producto);
-                            setDialogEditarOpen(true);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          className="bg-blue-600 hover:bg-blue-700"
-                          onClick={() => {
-                            setProductoEditando(producto);
-                            setDialogStockOpen(true);
-                          }}
-                        >
-                          +Stock
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {productosFiltrados.length === 0 && (
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No se encontraron productos</h3>
-              <p className="text-gray-600">Intenta con diferentes términos de búsqueda o filtros.</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleUpdateProduct} disabled={!isFormValid || isSubmitting}>
+                Guardar cambios
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {renderContent()}
     </div>
   );
 }

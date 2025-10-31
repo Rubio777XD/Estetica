@@ -1,379 +1,353 @@
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Input } from './ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
-import { DollarSign, Users, Edit2, Download, TrendingUp } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CreditCard, Calendar, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Label } from './ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+
+import { apiFetch, ApiError } from '../lib/api';
+import { formatCurrency, formatDateOnly, formatDateTime, toDateKey } from '../lib/format';
+import { invalidateQuery, setQueryData, useApiQuery } from '../lib/data-store';
+import type { Booking, BookingsResponse, Payment, PaymentMethod, PaymentsResponse } from '../types/api';
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+};
+
+const today = new Date();
+const initialFrom = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
+const initialTo = toDateKey(today);
+
+const PAYMENT_KEY = (from?: string, to?: string) => `payments:${from ?? 'all'}:${to ?? 'all'}`;
+
+function uniqueBookings(bookings: Booking[]) {
+  const map = new Map<string, Booking>();
+  for (const booking of bookings) {
+    map.set(booking.id, booking);
+  }
+  return Array.from(map.values());
+}
+
+function sortBookings(bookings: Booking[]) {
+  return [...bookings].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+}
+
 export default function Pagos() {
-  const [filtroDias, setFiltroDias] = useState('7');
-  const [comisionEditable, setComisionEditable] = useState<{ [key: string]: number }>({});
-
-  const especialistas = [
-    { nombre: 'Ibeth Renteria', comision: 60, correo: 'ibeth.renteria@jr.com' },
-    { nombre: 'María González', comision: 55, correo: 'maria.gonzalez@jr.com' },
-    { nombre: 'Ana López', comision: 65, correo: 'ana.lopez@jr.com' }
-  ];
-
-  const pagos = [
-    {
-      id: 'PAG-001',
-      cliente: 'María Rodríguez',
-      servicio: 'Manicura + Gel',
-      monto: 35000,
-      especialista: 'ibeth.renteria@jr.com',
-      fecha: '2025-10-12',
-      productosUsados: []
-    },
-    {
-      id: 'PAG-002',
-      cliente: 'Ana García',
-      servicio: 'Extensión de Pestañas',
-      monto: 80000,
-      especialista: 'maria.gonzalez@jr.com',
-      fecha: '2025-10-11',
-      productosUsados: ['Pestañas 0.07', 'Pegamento Premium']
-    },
-    {
-      id: 'PAG-003',
-      cliente: 'Laura Martínez',
-      servicio: 'Pedicura Spa',
-      monto: 45000,
-      especialista: 'ibeth.renteria@jr.com',
-      fecha: '2025-10-10',
-      productosUsados: []
-    },
-    {
-      id: 'PAG-004',
-      cliente: 'Sofia López',
-      servicio: 'Uñas Artísticas',
-      monto: 55000,
-      especialista: 'ana.lopez@jr.com',
-      fecha: '2025-10-09',
-      productosUsados: ['Strass Mix', 'Gel de Color']
-    },
-    {
-      id: 'PAG-005',
-      cliente: 'Carmen Torres',
-      servicio: 'Manicura Rusa',
-      monto: 45000,
-      especialista: 'ibeth.renteria@jr.com',
-      fecha: '2025-10-08',
-      productosUsados: []
-    },
-    {
-      id: 'PAG-006',
-      cliente: 'Patricia Díaz',
-      servicio: 'Lifting de Pestañas',
-      monto: 60000,
-      especialista: 'ana.lopez@jr.com',
-      fecha: '2025-10-07',
-      productosUsados: []
-    }
-  ];
-
-  // Calcular comisiones
-  const getComisionPorcentaje = (especialistaCorreo: string, pagoId: string) => {
-    if (comisionEditable[pagoId]) {
-      return comisionEditable[pagoId];
-    }
-    const especialista = especialistas.find(e => e.correo === especialistaCorreo);
-    return especialista?.comision || 50;
-  };
-
-  const calcularComision = (pago: any) => {
-    const porcentaje = getComisionPorcentaje(pago.especialista, pago.id);
-    return Math.round(pago.monto * (porcentaje / 100));
-  };
-
-  const calcularGananciaEmpresa = (pago: any) => {
-    const comision = calcularComision(pago);
-    return pago.monto - comision;
-  };
-
-  // Filtrar pagos por días
-  const pagosFiltrados = pagos.filter(pago => {
-    const fechaPago = new Date(pago.fecha);
-    const hoy = new Date('2025-10-13');
-    const diasAtras = parseInt(filtroDias);
-    const fechaLimite = new Date(hoy);
-    fechaLimite.setDate(hoy.getDate() - diasAtras);
-    
-    return fechaPago >= fechaLimite;
+  const [dateFrom, setDateFrom] = useState<string>(initialFrom);
+  const [dateTo, setDateTo] = useState<string>(initialTo);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState<{ bookingId: string; amount: string; method: PaymentMethod }>({
+    bookingId: '',
+    amount: '',
+    method: 'cash',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const estadisticas = {
-    ingresosTotales: pagosFiltrados.reduce((acc, p) => acc + p.monto, 0),
-    comisionesTotales: pagosFiltrados.reduce((acc, p) => acc + calcularComision(p), 0)
+  const paymentsKey = PAYMENT_KEY(dateFrom, dateTo);
+
+  const { data: paymentsResponse, status, error, refetch } = useApiQuery<PaymentsResponse>(
+    paymentsKey,
+    async () => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo) params.set('to', dateTo);
+      const search = params.toString();
+      return apiFetch<PaymentsResponse>(`/api/payments${search ? `?${search}` : ''}`);
+    }
+  );
+
+  const payments = paymentsResponse?.payments ?? [];
+  const totalAmount = paymentsResponse?.totalAmount ?? 0;
+
+  const { data: selectableBookings = [] } = useApiQuery<Booking[]>(
+    'bookings:for-payments',
+    async () => {
+      const [confirmed, done] = await Promise.all([
+        apiFetch<BookingsResponse>('/api/bookings?status=confirmed&limit=100'),
+        apiFetch<BookingsResponse>('/api/bookings?status=done&limit=100'),
+      ]);
+      return sortBookings(uniqueBookings([...confirmed.bookings, ...done.bookings]));
+    }
+  );
+
+  const bookingOptions = useMemo(
+    () =>
+      selectableBookings.map((booking) => ({
+        value: booking.id,
+        label: `${booking.clientName} · ${booking.service?.name ?? ''} (${formatDateOnly(booking.startTime)})`,
+      })),
+    [selectableBookings]
+  );
+
+  const selectedBooking = selectableBookings.find((booking) => booking.id === form.bookingId) ?? null;
+
+  const handleRegisterPayment = async () => {
+    if (isSubmitting) return;
+    if (!selectedBooking) {
+      toast.error('Selecciona una cita');
+      return;
+    }
+    const amount = Number(form.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Ingresa un monto válido');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const optimisticId = `temp-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    const optimisticPayment: Payment & { booking: Booking } = {
+      id: optimisticId,
+      bookingId: selectedBooking.id,
+      amount,
+      method: form.method,
+      createdAt: nowIso,
+      booking: selectedBooking,
+    };
+
+    const isWithinRange = (!dateFrom || toDateKey(new Date(nowIso)) >= dateFrom) && (!dateTo || toDateKey(new Date(nowIso)) <= dateTo);
+
+    const addedOptimistic = isWithinRange;
+    if (addedOptimistic) {
+      setQueryData<PaymentsResponse>(paymentsKey, (prev) => {
+        const base = prev ?? { payments: [], totalAmount: 0 };
+        return {
+          payments: [optimisticPayment, ...base.payments],
+          totalAmount: base.totalAmount + amount,
+        };
+      });
+    }
+
+    try {
+      const { payment } = await apiFetch<{ payment: Payment & { booking: Booking } }>('/api/payments', {
+        method: 'POST',
+        body: JSON.stringify({
+          bookingId: selectedBooking.id,
+          amount,
+          method: form.method,
+        }),
+      });
+      setQueryData<PaymentsResponse>(paymentsKey, (prev) => {
+        const base = prev ?? { payments: [], totalAmount: 0 };
+        const hasOptimistic = base.payments.some((item) => item.id === optimisticId);
+        if (!hasOptimistic) {
+          return {
+            payments: [payment, ...base.payments],
+            totalAmount: base.totalAmount + payment.amount,
+          };
+        }
+        return {
+          payments: base.payments.map((item) => (item.id === optimisticId ? payment : item)),
+          totalAmount: base.totalAmount - amount + payment.amount,
+        };
+      });
+      toast.success('Pago registrado');
+      setDialogOpen(false);
+      setForm({ bookingId: '', amount: '', method: form.method });
+    } catch (err) {
+      if (addedOptimistic) {
+        setQueryData<PaymentsResponse>(paymentsKey, (prev) => {
+          if (!prev) return prev;
+          const hasOptimistic = prev.payments.some((item) => item.id === optimisticId);
+          if (!hasOptimistic) return prev;
+          return {
+            payments: prev.payments.filter((item) => item.id !== optimisticId),
+            totalAmount: prev.totalAmount - amount,
+          };
+        });
+      }
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible registrar el pago');
+    } finally {
+      setIsSubmitting(false);
+      invalidateQuery([paymentsKey, 'stats-overview', 'stats-revenue']);
+    }
   };
 
-  estadisticas['gananciaEmpresa'] = estadisticas.ingresosTotales - estadisticas.comisionesTotales;
+  const renderContent = () => {
+    if (status === 'loading') {
+      return (
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index} className="animate-pulse">
+              <CardContent className="p-6 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-1/2" />
+                <div className="h-3 bg-gray-100 rounded w-2/3" />
+                <div className="h-3 bg-gray-100 rounded w-1/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      );
+    }
 
-  const formatearPrecio = (precio: number) => {
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0
-    }).format(precio);
-  };
+    if (status === 'error') {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <p className="text-sm text-gray-600">{error instanceof Error ? error.message : 'No fue posible cargar los pagos.'}</p>
+          <Button variant="outline" onClick={() => refetch()}>
+            Reintentar
+          </Button>
+        </div>
+      );
+    }
 
-  const formatearFecha = (fecha: string) => {
-    return new Date(fecha).toLocaleDateString('es-CO', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
+    if (payments.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
+          <CreditCard className="h-10 w-10 text-gray-400" />
+          <div>
+            <p className="font-medium text-gray-700">No hay pagos en este rango</p>
+            <p className="text-sm text-gray-500">Registra un nuevo pago para comenzar</p>
+          </div>
+        </div>
+      );
+    }
 
-  const handleEditarComision = (pagoId: string, nuevaComision: number) => {
-    setComisionEditable({ ...comisionEditable, [pagoId]: nuevaComision });
-    toast.success('Comisión actualizada', {
-      description: `Se recalculó la distribución con ${nuevaComision}% de comisión.`
-    });
-  };
-
-  const getNombreEspecialista = (correo: string) => {
-    const especialista = especialistas.find(e => e.correo === correo);
-    return especialista?.nombre || correo;
-  };
-
-  const handleExportar = () => {
-    toast.success('Exportando datos', {
-      description: 'Se está generando el archivo de exportación...'
-    });
+    return (
+      <div className="space-y-4">
+        {payments.map((payment) => (
+          <Card key={payment.id}>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base">{payment.booking?.clientName ?? 'Cliente'}</CardTitle>
+                <p className="text-sm text-gray-500">{payment.booking?.service?.name ?? 'Servicio'} · {formatDateTime(payment.booking?.startTime ?? payment.createdAt)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-semibold text-gray-900">{formatCurrency(payment.amount)}</p>
+                <p className="text-xs text-gray-500 capitalize">{PAYMENT_METHOD_LABELS[payment.method]}</p>
+              </div>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+    );
   };
 
   return (
     <div className="space-y-6">
-      {/* Controles de Filtro */}
-      <div className="flex justify-between items-center">
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Filtrar por período</label>
-          <Select value={filtroDias} onValueChange={setFiltroDias}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">Últimos 7 días</SelectItem>
-              <SelectItem value="14">Últimos 14 días</SelectItem>
-              <SelectItem value="30">Últimos 30 días</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button variant="outline" onClick={handleExportar}>
-          <Download className="h-4 w-4 mr-2" />
-          Exportar Datos
-        </Button>
-      </div>
-
-      {/* Estadísticas Principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Ingresos Totales</p>
-                <p className="text-3xl font-bold text-green-600">
-                  {formatearPrecio(estadisticas.ingresosTotales)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Últimos {filtroDias} días</p>
-              </div>
-              <DollarSign className="h-10 w-10 text-green-600" />
-            </div>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Total del periodo</CardTitle>
+            <Calendar className="h-5 w-5 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-semibold text-gray-900">{formatCurrency(totalAmount)}</p>
+            <p className="text-sm text-gray-500 mt-2">Pagos registrados entre las fechas seleccionadas.</p>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Comisiones a Pagar</p>
-                <p className="text-3xl font-bold text-orange-600">
-                  {formatearPrecio(estadisticas.comisionesTotales)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Ganancia empresa: {formatearPrecio(estadisticas.gananciaEmpresa)}
-                </p>
-              </div>
-              <Users className="h-10 w-10 text-orange-600" />
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Filtros</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="payments-from">Desde</Label>
+              <Input
+                id="payments-from"
+                type="date"
+                value={dateFrom}
+                max={dateTo}
+                onChange={(event) => setDateFrom(event.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="payments-to">Hasta</Label>
+              <Input
+                id="payments-to"
+                type="date"
+                value={dateTo}
+                min={dateFrom}
+                onChange={(event) => setDateTo(event.target.value)}
+              />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Información adicional */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4">
-          <div className="flex items-start space-x-3">
-            <TrendingUp className="h-5 w-5 text-blue-600 mt-0.5" />
-            <div>
-              <p className="font-medium text-blue-900">Resumen Financiero</p>
-              <p className="text-sm text-blue-700 mt-1">
-                De los <span className="font-semibold">{formatearPrecio(estadisticas.ingresosTotales)}</span> en ingresos, 
-                las trabajadoras reciben <span className="font-semibold">{formatearPrecio(estadisticas.comisionesTotales)}</span> ({Math.round((estadisticas.comisionesTotales / estadisticas.ingresosTotales) * 100)}%) 
-                y la empresa retiene <span className="font-semibold">{formatearPrecio(estadisticas.gananciaEmpresa)}</span> ({Math.round((estadisticas.gananciaEmpresa / estadisticas.ingresosTotales) * 100)}%).
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setForm({ bookingId: '', amount: '', method: 'cash' });
+          }
+        }}
+      >
+        <DialogTrigger asChild>
+          <Button className="bg-black hover:bg-gray-900">
+            <Plus className="h-4 w-4 mr-2" /> Registrar pago
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nuevo pago</DialogTitle>
+            <DialogDescription>Registra un pago recibido para actualizar el balance y las métricas.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Cita</Label>
+              <Select value={form.bookingId} onValueChange={(value) => setForm((prev) => ({ ...prev, bookingId: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una cita" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bookingOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="payment-amount">Monto</Label>
+                <Input
+                  id="payment-amount"
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={form.amount}
+                  onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Método</Label>
+                <Select value={form.method} onValueChange={(value) => setForm((prev) => ({ ...prev, method: value as PaymentMethod }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Efectivo</SelectItem>
+                    <SelectItem value="transfer">Transferencia</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {selectedBooking && (
+              <p className="text-sm text-gray-500">
+                {selectedBooking.clientName} · {selectedBooking.service?.name ?? 'Servicio'} ({formatDateTime(selectedBooking.startTime)})
               </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleRegisterPayment} disabled={isSubmitting || !form.bookingId || !Number(form.amount)}>
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Registrar'}
+              </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
 
-      {/* Tabla Detallada de Pagos y Comisiones */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Detalle de Pagos y Comisiones</span>
-            <Badge variant="outline">{pagosFiltrados.length} transacciones</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID Cita</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Trabajadora</TableHead>
-                  <TableHead>Servicio</TableHead>
-                  <TableHead>Costo Total</TableHead>
-                  <TableHead>Comisión</TableHead>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagosFiltrados.map((pago) => {
-                  const comisionPorcentaje = getComisionPorcentaje(pago.especialista, pago.id);
-                  const comisionMonto = calcularComision(pago);
-                  const empresaMonto = calcularGananciaEmpresa(pago);
-
-                  return (
-                    <TableRow key={pago.id}>
-                      <TableCell className="font-medium">{pago.id}</TableCell>
-                      <TableCell>{pago.cliente}</TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-sm">{getNombreEspecialista(pago.especialista)}</p>
-                          <p className="text-xs text-gray-500">{pago.especialista}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="text-sm">{pago.servicio}</p>
-                          {pago.productosUsados.length > 0 && (
-                            <p className="text-xs text-gray-500">
-                              +{pago.productosUsados.length} productos
-                            </p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-semibold">{formatearPrecio(pago.monto)}</p>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-semibold text-orange-600">
-                            {formatearPrecio(comisionMonto)}
-                          </p>
-                          <p className="text-xs text-gray-500">{comisionPorcentaje}%</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-semibold text-blue-600">
-                            {formatearPrecio(empresaMonto)}
-                          </p>
-                          <p className="text-xs text-gray-500">{100 - comisionPorcentaje}%</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {formatearFecha(pago.fecha)}
-                      </TableCell>
-                      <TableCell>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                              <Edit2 className="h-3 w-3 mr-1" />
-                              Editar
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Editar Comisión - {pago.id}</DialogTitle>
-                              <DialogDescription>
-                                Ajusta el porcentaje de comisión para esta transacción
-                              </DialogDescription>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div>
-                                <label className="text-sm font-medium">Cliente</label>
-                                <p className="text-sm text-gray-600">{pago.cliente}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium">Servicio</label>
-                                <p className="text-sm text-gray-600">{pago.servicio}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium">Costo Total</label>
-                                <p className="text-sm font-semibold">{formatearPrecio(pago.monto)}</p>
-                              </div>
-                              <div>
-                                <label className="text-sm font-medium block mb-2">
-                                  Porcentaje de Comisión (%)
-                                </label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  defaultValue={comisionPorcentaje}
-                                  onChange={(e) => {
-                                    const nuevoValor = parseInt(e.target.value);
-                                    if (nuevoValor >= 0 && nuevoValor <= 100) {
-                                      handleEditarComision(pago.id, nuevoValor);
-                                    }
-                                  }}
-                                />
-                              </div>
-                              <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                                <div className="flex justify-between">
-                                  <span className="text-sm">Comisión trabajadora:</span>
-                                  <span className="font-semibold text-orange-600">
-                                    {formatearPrecio(calcularComision(pago))}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-sm">Para la empresa:</span>
-                                  <span className="font-semibold text-blue-600">
-                                    {formatearPrecio(calcularGananciaEmpresa(pago))}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-
-          {pagosFiltrados.length === 0 && (
-            <div className="text-center py-12">
-              <DollarSign className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="font-medium text-gray-900 mb-2">No hay pagos en este período</h3>
-              <p className="text-gray-600">Selecciona un rango de fechas diferente.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {renderContent()}
     </div>
   );
 }

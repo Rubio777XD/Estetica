@@ -12,7 +12,7 @@ DROP TYPE IF EXISTS "AppointmentStatus" CASCADE;
 DROP TYPE IF EXISTS "Role" CASCADE;
 
 -- New enums
-CREATE TYPE "Role" AS ENUM ('ADMIN', 'STAFF');
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'EMPLOYEE', 'CLIENT');
 CREATE TYPE "BookingStatus" AS ENUM ('scheduled', 'confirmed', 'done', 'canceled');
 CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'transfer');
 
@@ -22,7 +22,7 @@ CREATE TABLE "User" (
     "email" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
     "name" TEXT,
-    "role" "Role" NOT NULL DEFAULT 'STAFF',
+    "role" "Role" NOT NULL DEFAULT 'EMPLOYEE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")

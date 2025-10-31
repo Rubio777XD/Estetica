@@ -44,7 +44,7 @@ export function authJWT(req: AuthedRequest, res: Response, next: NextFunction) {
   const token = cookieToken || headerToken;
 
   if (!token) {
-    return res.status(401).json({ error: "Missing token" });
+    return res.status(401).json({ success: false, message: "Token ausente", data: null, error: "Token ausente" });
   }
 
   try {
@@ -55,6 +55,8 @@ export function authJWT(req: AuthedRequest, res: Response, next: NextFunction) {
     if (cookieToken) {
       clearSessionCookie(res);
     }
-    res.status(401).json({ error: "Invalid token" });
+    res
+      .status(401)
+      .json({ success: false, message: "Token inválido", data: null, error: "Token inválido" });
   }
 }

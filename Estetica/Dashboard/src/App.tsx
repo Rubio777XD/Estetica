@@ -13,6 +13,7 @@ import Servicios from './components/Servicios';
 import Pagos from './components/Pagos';
 import Inventario from './components/Inventario';
 import Citas from './components/Citas';
+import Usuarios from './components/Usuarios';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
 
 const LANDING_FALLBACK = (
@@ -86,6 +87,10 @@ function AppShell() {
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ email: string; name?: string | null; role?: string | null } | null>(null);
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const navigationItems = isAdmin
+    ? [...menuItems, { id: 'usuarios', label: 'Usuarios', icon: Users }]
+    : menuItems;
 
   useEffect(() => {
     let mounted = true;
@@ -100,6 +105,12 @@ function AppShell() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin && activeSection === 'usuarios') {
+      setActiveSection('dashboard');
+    }
+  }, [activeSection, isAdmin]);
 
   // Escuchar evento personalizado para navegar a citas
   useEffect(() => {
@@ -139,6 +150,8 @@ function AppShell() {
         return <Pagos />;
       case 'inventario':
         return <Inventario />;
+      case 'usuarios':
+        return <Usuarios isAdmin={isAdmin} />;
       default:
         return <Dashboard />;
     }
@@ -164,7 +177,7 @@ function AppShell() {
         {/* Navigation */}
         <nav className="flex-1 py-6">
           <ul className="space-y-2 px-4">
-            {menuItems.map((item) => {
+            {navigationItems.map((item) => {
               const Icon = item.icon;
               return (
                 <li key={item.id}>

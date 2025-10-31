@@ -1,9 +1,9 @@
 # Estética – Landing, Dashboard y API con sesión por cookie HttpOnly
 
 ## Arquitectura
-- **Landing (`Landing/`, puerto 3001 en dev):** sitio público optimizado para performance. Redirige al Dashboard tras un login satisfactorio y nunca manipula el token directamente; todas las peticiones usan `credentials: 'include'`.
+- **Landing (`Landing/`, puerto 3001 en dev):** sitio público optimizado para performance. Redirige al Dashboard tras un login satisfactorio, detecta la cookie `salon_auth` para mostrar el botón **"Ir al Dashboard"** y respeta la query `?auth=dev` para redirigir automáticamente sin reloguear.
 - **Dashboard (`Dashboard/`, puerto 3003 en dev):** panel interno con guard de sesión. Consume la API mediante el helper `apiFetch` (incluye cookies y maneja 401 redirigiendo a la Landing).
-- **API (`backend/`, puerto 3000):** Express + Prisma sobre PostgreSQL. La cookie HttpOnly (`salon_session` por defecto) es la fuente de verdad; si existe un header `Authorization` se acepta para compatibilidad pero se prioriza la cookie. En producción se sirve detrás de un proxy bajo el mismo dominio (`/api`).
+- **API (`backend/`, puerto 3000):** Express + Prisma sobre PostgreSQL. La cookie HttpOnly (`salon_auth` por defecto) es la fuente de verdad; si existe un header `Authorization` se acepta para compatibilidad pero se prioriza la cookie. Al arrancar valida que exista al menos un administrador (`BOOTSTRAP_ADMIN_EMAIL`) y crea uno con contraseña temporal si es necesario. En producción se sirve detrás de un proxy bajo el mismo dominio (`/api`).
 
 ## Variables de entorno
 ### Backend (`backend/.env`)
@@ -11,8 +11,11 @@
 PORT=3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 JWT_SECRET=clave_super_segura
-SESSION_COOKIE_NAME=salon_session
+SESSION_COOKIE_NAME=salon_auth
 SESSION_COOKIE_DOMAIN= # opcional, establece el dominio en producción
+BOOTSTRAP_ADMIN_EMAIL=admin@local.dev # opcional
+BOOTSTRAP_ADMIN_NAME=Administrador Autogenerado # opcional
+BOOTSTRAP_ADMIN_PASSWORD= # opcional (aleatoria si se omite)
 ```
 - En desarrollo la cookie se emite con `Secure=false`, `SameSite=Lax` y `HttpOnly=true`. En producción el proxy debe estar en HTTPS para habilitar `Secure=true`.
 
@@ -34,7 +37,7 @@ Modelos principales (ver `backend/prisma/schema.prisma`):
 - **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status` (`scheduled`, `confirmed`, `done`, `canceled`), `notes`, `createdAt`, `updatedAt`.
 - **Payment:** `id`, `bookingId`, `amount`, `method` (`cash`, `transfer`), `createdAt`.
 - **Product:** `id`, `name`, `price`, `stock`, `lowStockThreshold`, `createdAt`, `updatedAt`.
-- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`).
+- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`). Roles permitidos: `ADMIN`, `EMPLOYEE`, `CLIENT`.
 
 ### Migraciones y seed
 ```bash
@@ -63,10 +66,13 @@ npm install
 npm run dev -- --port 3003
 ```
 - El backend expone CORS sólo para `http://localhost:3001` y `http://localhost:3003` con `credentials: true`.
+- Al iniciar el backend verás logs `[bootstrap] administrador creado` si se generó uno nuevo; la contraseña temporal se imprime una única vez.
 - El Dashboard redirige a la Landing si cualquier petición devuelve 401 (`apiFetch` emite el evento `dashboard:unauthorized`).
 
 ## Endpoints principales
-Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/login` y `/api/logout`). Validaciones con Zod.
+Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/login` y `/api/logout`). Validaciones con Zod. Cada
+respuesta exitosa sigue el sobre `{ success, message, data }` y replica las propiedades históricas (`services`, `bookings`, etc.)
+para compatibilidad con los clientes existentes.
 
 ### Autenticación
 - `POST /api/login` → Body `{ email, password }`. Devuelve `{ token }` (sólo informativo) y envía cookie HttpOnly. Rate limit: 5 intentos/IP/min.
@@ -111,6 +117,12 @@ Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/
 | POST | `/api/products` | Crea producto `{ name, price, stock, lowStockThreshold }`. |
 | PUT | `/api/products/:id` | Actualiza cantidades/precio. |
 | DELETE | `/api/products/:id` | Borra producto. |
+
+### Usuarios (sólo ADMIN)
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| GET | `/api/users` | Lista usuarios registrados con rol y fecha de creación. |
+| POST | `/api/users` | Crea usuario `{ email, password, role, name? }`. Valida duplicados y asigna roles `ADMIN`, `EMPLOYEE` o `CLIENT`. |
 
 ### Métricas
 - `GET /api/stats/overview` →

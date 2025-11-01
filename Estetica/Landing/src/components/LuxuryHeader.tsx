@@ -56,7 +56,7 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
           setIsLoggedIn(true);
         }
       } catch (error) {
-        clearSession();
+        await logout().catch(() => undefined);
         if (isMounted) {
           setIsLoggedIn(false);
         }

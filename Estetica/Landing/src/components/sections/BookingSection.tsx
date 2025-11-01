@@ -2,16 +2,12 @@ import { useEffect, useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
 import { Card, CardContent } from "../ui/card";
-import { Calendar } from "../ui/calendar";
 import { CheckCircle, Clock, User, Phone, Mail, Calendar as CalendarIcon } from "lucide-react";
+import { apiFetch } from "../../lib/api";
 import { usePublicServices } from "../../lib/services-store";
-
-const timeSlots = [
-  '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
-  '12:00 PM', '12:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
-  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM'
-];
+import { formatLocalDateTime, getLocalDateTimeInputValue, localDateTimeToIso } from "../../lib/datetime";
 
 interface BookingSectionProps {
   preSelectedService?: string;
@@ -27,14 +23,17 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const currencyFormatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedService, setSelectedService] = useState(preSelectedService || '');
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  const [selectedTime, setSelectedTime] = useState('');
+  const [dateTimeValue, setDateTimeValue] = useState('');
   const [isCompleted, setIsCompleted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    email: ''
+    email: '',
   });
+  const [minDateTimeValue] = useState(() => getLocalDateTimeInputValue());
 
   const progress = ((currentStep - 1) / 2) * 100;
 
@@ -57,6 +56,9 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     if (!services.some((service) => service.id === selectedService)) {
       setSelectedService('');
       setCurrentStep(1);
+      setDateTimeValue('');
+      setNotes('');
+      setSubmitError(null);
     }
   }, [services, selectedService]);
 
@@ -66,6 +68,9 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     }
     if (services.some((service) => service.id === preSelectedService)) {
       setSelectedService(preSelectedService);
+      setDateTimeValue('');
+      setNotes('');
+      setSubmitError(null);
       setCurrentStep(2);
     }
   }, [preSelectedService, services]);
@@ -75,41 +80,98 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       return;
     }
     setSelectedService(serviceId);
+    setDateTimeValue('');
+    setNotes('');
+    setSubmitError(null);
     setCurrentStep(2);
   };
 
   const handleDateTimeSelect = () => {
-    if (selectedDate && selectedTime) {
-      setCurrentStep(3);
+    if (!dateTimeValue) {
+      setSubmitError('Selecciona una fecha y hora válidas.');
+      return;
+    }
+
+    if (!localDateTimeToIso(dateTimeValue)) {
+      setSubmitError('Selecciona una fecha y hora válidas.');
+      return;
+    }
+
+    setSubmitError(null);
+    setCurrentStep(3);
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    if (!selectedService) {
+      setSubmitError('Selecciona un servicio antes de continuar.');
+      setCurrentStep(1);
+      return;
+    }
+
+    const startIso = localDateTimeToIso(dateTimeValue);
+    if (!startIso) {
+      setSubmitError('Selecciona una fecha y hora válidas.');
+      setCurrentStep(2);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    const extraNotes: string[] = [];
+    if (notes.trim().length > 0) {
+      extraNotes.push(notes.trim());
+    }
+    if (formData.phone.trim().length > 0) {
+      extraNotes.push(`Tel: ${formData.phone.trim()}`);
+    }
+    if (formData.email.trim().length > 0) {
+      extraNotes.push(`Email: ${formData.email.trim()}`);
+    }
+
+    try {
+      await apiFetch('/api/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientName: formData.name.trim(),
+          serviceId: selectedService,
+          startTime: startIso,
+          notes: extraNotes.join(' | '),
+        }),
+        credentials: 'include',
+      });
+      setIsCompleted(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No fue posible crear la cita. Intenta nuevamente.';
+      setSubmitError(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsCompleted(true);
-  };
-
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (submitError) {
+      setSubmitError(null);
+    }
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
   };
 
   const selectedServiceData = services.find((service) => service.id === selectedService) || null;
+  const formattedDateTime = dateTimeValue ? formatLocalDateTime(dateTimeValue) : '';
 
   const generateCalendarFile = () => {
-    if (!selectedServiceData || !selectedDate || !selectedTime) return;
-    
-    const startDate = new Date(selectedDate);
-    const [time, period] = selectedTime.split(' ');
-    const [hours, minutes] = time.split(':');
-    let hour = parseInt(hours);
-    if (period === 'PM' && hour !== 12) hour += 12;
-    if (period === 'AM' && hour === 12) hour = 0;
-    
-    startDate.setHours(hour, parseInt(minutes || '0'));
-    
+    if (!selectedServiceData || !dateTimeValue) return;
+
+    const startIso = localDateTimeToIso(dateTimeValue);
+    if (!startIso) return;
+
+    const startDate = new Date(startIso);
     const durationMinutes = selectedServiceData?.duration ?? 90;
     const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
     
@@ -161,19 +223,8 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                     <span className="font-medium text-high-contrast">{selectedServiceData?.name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-medium-contrast">Fecha:</span>
-                    <span className="font-medium text-high-contrast">
-                      {selectedDate?.toLocaleDateString('es-ES', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-medium-contrast">Hora:</span>
-                    <span className="font-medium text-high-contrast">{selectedTime}</span>
+                    <span className="text-medium-contrast">Fecha y hora:</span>
+                    <span className="font-medium text-high-contrast">{formattedDateTime || '—'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-medium-contrast">Duración:</span>
@@ -203,6 +254,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                     onClick={() => {
                       setIsCompleted(false);
                       setCurrentStep(2);
+                      setSubmitError(null);
                     }}
                   >
                     Reprogramar
@@ -355,6 +407,9 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                     ))}
                   </div>
                 )}
+                {submitError && currentStep === 1 ? (
+                  <p className="text-sm text-red-400 text-center mt-6">{submitError}</p>
+                ) : null}
               </div>
             </div>
           )}
@@ -371,61 +426,46 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                 </div>
               </div>
               <div className="p-8 pt-0">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Calendar */}
-                  <div>
-                    <Label className="text-high-contrast mb-4 block font-body">Selecciona la fecha</Label>
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      disabled={(date) => date < new Date() || date.getDay() === 0} // Disable past dates and Sundays
-                      className="rounded-xl border border-editorial-beige/30"
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <Label htmlFor="booking-datetime" className="text-high-contrast font-body">
+                      Selecciona la fecha y hora
+                    </Label>
+                    <Input
+                      id="booking-datetime"
+                      type="datetime-local"
+                      value={dateTimeValue}
+                      min={minDateTimeValue || undefined}
+                      step={900}
+                      onChange={(event) => setDateTimeValue(event.target.value)}
+                      className="h-12 rounded-xl"
                     />
-                  </div>
-                  
-                  {/* Time Slots */}
-                  <div>
-                    <Label className="text-high-contrast mb-4 block font-body">Horarios disponibles</Label>
-                    <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto">
-                      {timeSlots.map((time) => (
-                        <button
-                          key={time}
-                          onClick={() => setSelectedTime(time)}
-                          disabled={!selectedDate}
-                          className={`p-3 rounded-lg border text-sm luxury-transition ${
-                            selectedTime === time 
-                              ? 'bg-editorial-beige text-white border-editorial-beige' 
-                              : 'border-editorial-beige/30 hover:border-editorial-beige hover:bg-editorial-beige/10 disabled:opacity-50 disabled:cursor-not-allowed text-medium-contrast'
-                          }`}
-                          style={{
-                            boxShadow: selectedTime === time 
-                              ? '0 0 12px rgba(234, 220, 199, 0.3)'
-                              : undefined
-                          }}
-                        >
-                          {time}
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-xs text-medium-contrast">
+                      Zona horaria: America/Tijuana. Te recomendamos seleccionar la hora disponible más cercana.
+                    </p>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between mt-8">
                   <button
                     className="btn-secondary"
                     onClick={() => setCurrentStep(1)}
+                    type="button"
                   >
                     Atrás
                   </button>
                   <button
                     onClick={handleDateTimeSelect}
-                    disabled={!selectedDate || !selectedTime}
+                    disabled={!dateTimeValue}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
                   >
                     Continuar
                   </button>
                 </div>
+                {submitError && currentStep === 2 ? (
+                  <p className="text-sm text-red-400 mt-4">{submitError}</p>
+                ) : null}
               </div>
             </div>
           )}
@@ -493,7 +533,35 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                           className="h-12 rounded-xl"
                         />
                       </div>
-                      
+
+                      <div className="space-y-2">
+                        <Label htmlFor="notes" className="text-high-contrast font-body">
+                          Notas adicionales (opcional)
+                        </Label>
+                        <Textarea
+                          id="notes"
+                          name="notes"
+                          value={notes}
+                          onChange={(event) => {
+                            if (submitError) {
+                              setSubmitError(null);
+                            }
+                            setNotes(event.target.value);
+                          }}
+                          rows={4}
+                          maxLength={500}
+                          placeholder="Cuéntanos si tienes alguna preferencia, alergia o detalle que debamos considerar."
+                          className="rounded-xl"
+                        />
+                        <p className="text-xs text-medium-contrast">
+                          También puedes indicar si prefieres contacto vía WhatsApp.
+                        </p>
+                      </div>
+
+                      {submitError ? (
+                        <p className="text-sm text-red-400">{submitError}</p>
+                      ) : null}
+
                       <div className="flex justify-between pt-4">
                         <button
                           type="button"
@@ -502,11 +570,12 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                         >
                           Atrás
                         </button>
-                        <button 
+                        <button
                           type="submit"
-                          className="btn-primary"
+                          className="btn-primary disabled:opacity-60"
+                          disabled={isSubmitting}
                         >
-                          Agendar ahora
+                          {isSubmitting ? 'Agendando…' : 'Agendar ahora'}
                         </button>
                       </div>
                     </form>
@@ -521,18 +590,8 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                         <span className="font-medium text-high-contrast">{selectedServiceData?.name}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-medium-contrast">Fecha:</span>
-                        <span className="font-medium text-high-contrast">
-                          {selectedDate?.toLocaleDateString('es-ES', { 
-                            weekday: 'long', 
-                            day: 'numeric', 
-                            month: 'long' 
-                          })}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-medium-contrast">Hora:</span>
-                        <span className="font-medium text-high-contrast">{selectedTime}</span>
+                        <span className="text-medium-contrast">Fecha y hora:</span>
+                        <span className="font-medium text-high-contrast">{formattedDateTime || '—'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-medium-contrast">Duración:</span>

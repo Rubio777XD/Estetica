@@ -728,6 +728,49 @@ protectedRouter.post(
   })
 );
 
+publicRouter.post(
+  '/bookings',
+  asyncHandler(async (req, res) => {
+    const result = bookingCreateSchema.safeParse(req.body);
+    if (!result.success) {
+      throw new HttpError(400, 'Datos inválidos', result.error.flatten());
+    }
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const { clientName, serviceId, startTime, notes } = result.data;
+      const service = await tx.service.findUnique({ where: { id: serviceId } });
+      if (!service) {
+        throw new HttpError(404, 'Servicio no encontrado');
+      }
+
+      const start = new Date(startTime);
+      if (Number.isNaN(start.getTime())) {
+        throw new HttpError(400, 'Fecha de inicio inválida');
+      }
+
+      const normalized = normalizeNotes(notes);
+      const data: Parameters<typeof tx.booking.create>[0]['data'] = {
+        clientName,
+        serviceId,
+        startTime: start,
+        endTime: addMinutes(start, service.duration),
+      };
+      if (normalized !== undefined) {
+        data.notes = normalized;
+      }
+
+      return tx.booking.create({
+        data,
+        include: { service: true, payments: true },
+      });
+    });
+
+    broadcastEvent('booking:created', { id: booking.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
+    return sendSuccess(res, { booking }, 'Cita creada', 201);
+  })
+);
+
 protectedRouter.put(
   '/bookings/:id',
   asyncHandler(async (req, res) => {

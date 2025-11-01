@@ -6,24 +6,22 @@ import {
   Scissors,
   CreditCard,
   Package,
-  BookOpen,
   Home,
-  Settings,
   LogOut,
+  CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Toaster } from './components/ui/sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './components/ui/dialog';
-import { toast } from 'sonner@2.0.3';
 import logoImage from 'figma:asset/91221a42731ea6d22d48bae9140b3e7361797c30.png';
 
 import Dashboard from './components/Dashboard';
 import Servicios from './components/Servicios';
 import Pagos from './components/Pagos';
 import Inventario from './components/Inventario';
-import Citas from './components/Citas';
+import CitasProximas from './components/CitasProximas';
+import CitasTerminadas from './components/CitasTerminadas';
 import CitasPendientes from './components/CitasPendientes';
 import Usuarios from './components/Usuarios';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
@@ -90,7 +88,8 @@ function AuthGuard({ children }: PropsWithChildren) {
 
 const menuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
-  { id: 'citas', label: 'Citas', icon: Calendar },
+  { id: 'citas-proximas', label: 'Citas próximas', icon: Calendar },
+  { id: 'citas-terminadas', label: 'Citas terminadas', icon: CheckCircle2 },
   { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
   { id: 'servicios', label: 'Servicios', icon: Scissors },
   { id: 'pagos', label: 'Pagos & Comisiones', icon: CreditCard },
@@ -99,7 +98,6 @@ const menuItems = [
 
 function AppShell() {
   const [activeSection, setActiveSection] = useState('dashboard');
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ email: string; name?: string | null; role?: string | null } | null>(null);
   const isAdmin = currentUser?.role === 'ADMIN';
@@ -249,7 +247,7 @@ function AppShell() {
   // Escuchar evento personalizado para navegar a citas
   useEffect(() => {
     const handleNavigateToCitas = () => {
-      setActiveSection('citas');
+      setActiveSection('citas-proximas');
     };
     window.addEventListener('navigate-to-citas', handleNavigateToCitas);
     return () => window.removeEventListener('navigate-to-citas', handleNavigateToCitas);
@@ -276,8 +274,10 @@ function AppShell() {
     switch (activeSection) {
       case 'dashboard':
         return <Dashboard />;
-      case 'citas':
-        return <Citas />;
+      case 'citas-proximas':
+        return <CitasProximas />;
+      case 'citas-terminadas':
+        return <CitasTerminadas />;
       case 'citas-pendientes':
         return <CitasPendientes />;
       case 'servicios':
@@ -356,20 +356,14 @@ function AppShell() {
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold text-gray-900">
-              {menuItems.find(item => item.id === activeSection)?.label || 'Dashboard'}
+              {navigationItems.find((item) => item.id === activeSection)?.label ||
+                menuItems.find((item) => item.id === activeSection)?.label ||
+                'Dashboard'}
             </h1>
             <div className="flex items-center space-x-4">
               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                 Sistema Activo
               </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfigDialogOpen(true)}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Configuración
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -389,76 +383,6 @@ function AppShell() {
         </main>
       </div>
 
-      {/* Modal de Configuración */}
-      <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Configuración del Sistema</DialogTitle>
-            <DialogDescription>
-              Administra las opciones y configuración del sistema
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-medium">Información del Negocio</h4>
-              <div className="text-sm text-gray-600 space-y-1">
-                <p><strong>Nombre:</strong> JR Studio de Belleza</p>
-                <p><strong>Administradora:</strong> Ibeth Renteria</p>
-                <p><strong>Estado:</strong> <Badge className="bg-green-100 text-green-700 border-green-200">Activo</Badge></p>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <h4 className="font-medium">Opciones</h4>
-              <div className="space-y-2">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={() => {
-                    toast.info('Función en desarrollo', {
-                      description: 'Esta característica estará disponible próximamente'
-                    });
-                  }}
-                >
-                  Gestionar Notificaciones
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={() => {
-                    toast.info('Función en desarrollo', {
-                      description: 'Esta característica estará disponible próximamente'
-                    });
-                  }}
-                >
-                  Exportar Datos
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={() => {
-                    toast.info('Función en desarrollo', {
-                      description: 'Esta característica estará disponible próximamente'
-                    });
-                  }}
-                >
-                  Configurar Horarios
-                </Button>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t">
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => setConfigDialogOpen(false)}
-              >
-                Cerrar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
     </>
   );

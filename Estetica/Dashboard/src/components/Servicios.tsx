@@ -8,6 +8,8 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 import { apiFetch, ApiError } from '../lib/api';
 import { formatCurrency } from '../lib/format';
@@ -20,12 +22,14 @@ type ServiceFormState = {
   name: string;
   price: string;
   duration: string;
+  description: string;
 };
 
 const EMPTY_FORM: ServiceFormState = {
   name: '',
   price: '',
   duration: '',
+  description: '',
 };
 
 function createFormFromService(service: Service): ServiceFormState {
@@ -33,6 +37,7 @@ function createFormFromService(service: Service): ServiceFormState {
     name: service.name,
     price: String(service.price),
     duration: String(service.duration),
+    description: service.description ?? '',
   };
 }
 
@@ -68,11 +73,21 @@ export default function Servicios() {
   const handleCreate = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
-    const payload = {
+    const rawDescription = formState.description.trim();
+    const payload: {
+      name: string;
+      price: number;
+      duration: number;
+      description?: string;
+    } = {
       name: formState.name.trim(),
       price: Number(formState.price),
       duration: Number(formState.duration),
     };
+
+    if (rawDescription) {
+      payload.description = rawDescription;
+    }
 
     const optimisticId = `temp-${Date.now()}`;
     const optimisticService: Service = {
@@ -80,6 +95,7 @@ export default function Servicios() {
       name: payload.name,
       price: payload.price,
       duration: payload.duration,
+      description: payload.description ?? null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -109,17 +125,34 @@ export default function Servicios() {
   const handleUpdate = async () => {
     if (!servicioEditando || isSubmitting) return;
     setIsSubmitting(true);
-    const payload = {
+    const rawDescription = formState.description.trim();
+    const payload: {
+      name: string;
+      price: number;
+      duration: number;
+      description?: string;
+    } = {
       name: formState.name.trim(),
       price: Number(formState.price),
       duration: Number(formState.duration),
     };
 
+    if (rawDescription) {
+      payload.description = rawDescription;
+    } else {
+      payload.description = '';
+    }
+
     const previous = services.find((item) => item.id === servicioEditando.id);
     setQueryData<Service[]>(SERVICES_KEY, (prev = []) =>
       prev.map((item) =>
         item.id === servicioEditando.id
-          ? { ...item, ...payload, updatedAt: new Date().toISOString() }
+          ? {
+              ...item,
+              ...payload,
+              description: payload.description ?? null,
+              updatedAt: new Date().toISOString(),
+            }
           : item
       )
     );
@@ -209,54 +242,83 @@ export default function Servicios() {
     }
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {serviciosFiltrados.map((servicio) => (
-          <Card key={servicio.id} className="relative">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-start justify-between text-lg">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <Scissors className="h-4 w-4 text-gray-500" />
-                    <span>{servicio.name}</span>
+      <TooltipProvider>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {serviciosFiltrados.map((servicio) => (
+            <Card key={servicio.id} className="relative">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-start justify-between text-lg">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <Scissors className="h-4 w-4 text-gray-500" />
+                      <span>{servicio.name}</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Creado el {new Date(servicio.createdAt).toLocaleDateString('es-MX')}
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">Creado el {new Date(servicio.createdAt).toLocaleDateString('es-MX')}</p>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" onClick={() => openEditDialog(servicio)} aria-label="Editar servicio">
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-500 hover:text-red-600"
+                      onClick={() => handleDelete(servicio)}
+                      aria-label="Eliminar servicio"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <DollarSign className="h-4 w-4" />
+                  <span>{formatCurrency(servicio.price)}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon" onClick={() => openEditDialog(servicio)} aria-label="Editar servicio">
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-red-500 hover:text-red-600"
-                    onClick={() => handleDelete(servicio)}
-                    aria-label="Eliminar servicio"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Clock className="h-4 w-4" />
+                  <span>{servicio.duration} min</span>
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <DollarSign className="h-4 w-4" />
-                <span>{formatCurrency(servicio.price)}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Clock className="h-4 w-4" />
-                <span>{servicio.duration} min</span>
-              </div>
-              <Badge variant="outline" className="bg-gray-50 text-gray-700">
-                ID: {servicio.id.slice(0, 8)}
-              </Badge>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                {servicio.description ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-sm text-gray-600 leading-snug line-clamp-3 cursor-help">
+                        {servicio.description}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-sm whitespace-pre-line">
+                      <p className="text-sm text-gray-100">{servicio.description}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Sin descripción registrada</p>
+                )}
+                <Badge variant="outline" className="bg-gray-50 text-gray-700">
+                  ID: {servicio.id.slice(0, 8)}
+                </Badge>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </TooltipProvider>
     );
   };
 
-  const isFormValid = formState.name.trim().length > 0 && Number(formState.price) > 0 && Number(formState.duration) >= 5;
+  const nameLength = formState.name.trim().length;
+  const descriptionLength = formState.description.trim().length;
+  const priceValue = Number(formState.price);
+  const durationValue = Number(formState.duration);
+
+  const isFormValid =
+    nameLength > 0 &&
+    nameLength <= 100 &&
+    priceValue > 0 &&
+    durationValue >= 5 &&
+    durationValue <= 480 &&
+    descriptionLength <= 500;
 
   return (
     <div className="space-y-6">
@@ -326,6 +388,22 @@ export default function Servicios() {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="service-description">Descripción (opcional)</Label>
+                <Textarea
+                  id="service-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Describe los beneficios, productos utilizados o cualquier detalle relevante."
+                />
+                <p className="text-xs text-gray-500">
+                  Se mostrará en la landing pública y en el panel. Máximo 500 caracteres.
+                </p>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setDialogNuevoOpen(false)}>
                   Cancelar
@@ -362,11 +440,11 @@ export default function Servicios() {
                 onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))}
               />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-service-price">Precio</Label>
-                <Input
-                  id="edit-service-price"
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-service-price">Precio</Label>
+                  <Input
+                    id="edit-service-price"
                   type="number"
                   min="0"
                   step="10"
@@ -383,14 +461,29 @@ export default function Servicios() {
                   max="480"
                   value={formState.duration}
                   onChange={(event) => setFormState((prev) => ({ ...prev, duration: event.target.value }))}
-                />
+                  />
+                </div>
               </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDialogEditarOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleUpdate} disabled={!isFormValid || isSubmitting}>
+              <div className="space-y-2">
+                <Label htmlFor="edit-service-description">Descripción (opcional)</Label>
+                <Textarea
+                  id="edit-service-description"
+                  value={formState.description}
+                  onChange={(event) =>
+                    setFormState((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  rows={4}
+                  maxLength={500}
+                />
+                <p className="text-xs text-gray-500">
+                  Mantén la descripción breve. Puedes resaltar ingredientes, beneficios o recomendaciones.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDialogEditarOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleUpdate} disabled={!isFormValid || isSubmitting}>
                 Guardar cambios
               </Button>
             </div>

@@ -40,8 +40,9 @@ Backend API (Express, 3000) ───────────────▶ Neo
 
 ## Módulos del sistema
 ### Landing (`Landing/`, puerto 3001)
-- Landing React (Vite) que consume `/api/public/services` para renderizar catálogo e inicia sesión mediante un modal ligero.
+- Landing React (Vite) que consume `/api/public/services` para renderizar catálogo con descripciones, precios y duración.
 - Detecta la cookie de sesión al montar (`fetchMe`) y habilita el botón **Ir al Dashboard**; si la URL incluye `?auth=dev`, redirige automáticamente al panel tras validar la sesión.
+- Formulario de agendado con pickers nativos (`date`/`time`), validación básica y envío a `/api/public/bookings` usando cookies HttpOnly. Tras crear la cita, se emite `booking:created` y el Dashboard refresca **Citas pendientes** vía SSE.
 - Permite login rápido (`/api/login`) con `credentials:"include"`, cierre de sesión (`/api/logout`) y navegación suave entre secciones lazy-loaded.
 
 ### Dashboard (`Dashboard/`, puerto 3003)
@@ -49,8 +50,9 @@ Backend API (Express, 3000) ───────────────▶ Neo
 - Inicia un `EventSource` contra `/api/events` con `withCredentials:true` para revalidar caches (`invalidateQuery`) ante eventos `service:*`, `booking:*`, `booking:assignment:*`, `payment:*`, `payments:invalidate`, `product:*` y `stats:invalidate`.
 - Secciones principales:
   - **Dashboard:** tarjetas de métricas (`/api/stats/overview`) y gráfica de ingresos (`/api/stats/revenue`).
-  - **Servicios:** CRUD optimista con validaciones de duración/precio y auto-refetch tras SSE.
-  - **Citas:** filtros por rango (hoy/semana/todas) y estado, ediciones con recomputo `endTime`, cambios de estado y borrado con retroalimentación visual.
+  - **Servicios:** CRUD optimista con validaciones de duración/precio, campo opcional `description` (máx. 500 caracteres) y auto-refetch tras SSE.
+  - **Citas próximas:** muestra programadas/confirmadas con confirmación rápida, registro de pago + cambio a realizado, edición local del monto y cancelación con modal.
+  - **Citas terminadas:** historial filtrable por rango con montos pagados (suma de `payments`).
   - **Citas pendientes:** listado de citas sin `assignedEmail`, envío/cancelación de invitaciones, badge con vencimiento relativo y refresco en vivo cuando una invitación se acepta o expira.
   - **Pagos & Comisiones:** registro de pagos con selección rápida de citas confirmadas/realizadas y resumen de montos.
   - **Inventario:** tabla full-width, resaltado de stock bajo y CRUD optimista que sincroniza métricas.
@@ -72,7 +74,7 @@ Backend API (Express, 3000) ───────────────▶ Neo
 
 ### Modelos clave
 - **User:** credenciales, nombre opcional y rol. Índices por correo.
-- **Service:** nombre único, precio, duración, descripciones, highlights y relación `booking`.
+- **Service:** nombre único, precio, duración (5–480 min), `description?` (hasta 500 caracteres), highlights y relación `booking`.
 - **Booking:** referencia a `Service`, ventana `startTime`/`endTime`, estado, notas y asignación manual (`assignedEmail`, `assignedAt`).
 - **Payment:** pagos vinculados a `Booking`, método y timestamps.
 - **Product:** inventario con umbral de stock bajo.
@@ -207,16 +209,23 @@ npm run dev -- --port 3003
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/services` | Lista completa (requiere sesión).
-| POST | `/api/services` | Crea servicio (Zod valida nombre, precio y duración).
-| PUT | `/api/services/:id` | Actualiza.
+| POST | `/api/services` | Crea servicio (nombre ≤ 100, precio > 0, duración 5–480, `description?` ≤ 500).
+| PUT | `/api/services/:id` | Actualiza con las mismas reglas.
 | DELETE | `/api/services/:id` | Borra (protege contra servicios con citas).
+
+#### Servicios con descripción
+
+- El modelo `Service` expone `description?: string | null` (campo opcional). El esquema Prisma ya incluía la columna, por lo que no fue necesaria una nueva migración.
+- Los endpoints `POST /api/services` y `PUT /api/services/:id` aceptan `description?` (hasta 500 caracteres); el backend normaliza cadenas vacías a `null`.
+- El Dashboard permite capturar y editar la descripción (se muestra resumida con tooltip) y la landing pública la renderiza en el catálogo de servicios.
 
 ### Citas
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/bookings?from=&to=&status=&limit=` | Filtra por fecha, estado y límite (default 100). Expira invitaciones vencidas antes de responder.
 | GET | `/api/bookings/unassigned` | Citas sin `assignedEmail`, con últimas 5 invitaciones.
-| POST | `/api/bookings` | Crea cita, recalculando `endTime` según duración del servicio.
+| POST | `/api/bookings` | Crea cita autenticada, recalculando `endTime` según duración del servicio.
+| POST | `/api/public/bookings` | Crea cita desde la landing sin sesión (usa `clientName`, `serviceId`, `startTime`, `notes?`).
 | PUT | `/api/bookings/:id` | Actualiza cita (incluye estado opcional).
 | PATCH | `/api/bookings/:id/status` | Cambia estado puntual.
 | DELETE | `/api/bookings/:id` | Elimina cita.

@@ -1,8 +1,19 @@
 -- AlterEnum
-CREATE TYPE "Role_new" AS ENUM ('ADMIN', 'EMPLOYEE');
-ALTER TABLE "User" ALTER COLUMN "role" TYPE "Role_new" USING "role"::text::"Role_new";
+ALTER TABLE "User" ALTER COLUMN "role" DROP DEFAULT;
+
+DO $$
+BEGIN
+    CREATE TYPE "Role_new" AS ENUM ('ADMIN', 'EMPLOYEE');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "User" ALTER COLUMN "role" TYPE "Role_new" USING ("role"::text::"Role_new");
+
 DROP TYPE "Role";
+
 ALTER TYPE "Role_new" RENAME TO "Role";
+
 ALTER TABLE "User" ALTER COLUMN "role" SET DEFAULT 'EMPLOYEE';
 
 DO $$

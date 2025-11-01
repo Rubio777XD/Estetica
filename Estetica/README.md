@@ -198,6 +198,57 @@ npm run prisma:seed
 # Servidor API (http://localhost:3000)
 npm run dev
 ```
+
+## 🧹 Limpieza y migraciones confiables (Windows + Neon)
+
+### Quitar BOM en `migration.sql` (PowerShell)
+Ejecuta el siguiente script desde `backend\prisma` (o desde la raíz del repo) para remover el caracter BOM `U+FEFF` y reescribir en UTF-8 sin BOM. Es idempotente y seguro correrlo cada vez que se agregue una migración nueva.
+
+```powershell
+Get-ChildItem -Recurse -Filter "migration.sql" |
+  ForEach-Object {
+    $path = $_.FullName
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    $text  = Get-Content $path -Raw
+    $hasUtf8Bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    if ($hasUtf8Bom -or ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF)) {
+      if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+      [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
+      Write-Host "Fixed BOM -> $path"
+    }
+  }
+```
+
+### Flujo recomendado para validar migraciones (PowerShell / Windows)
+
+```powershell
+cd backend
+$env:DATABASE_URL="postgresql://<user>:<password>@<neon-host>:5432/estetica_dev"
+$env:DIRECT_URL="postgresql://<user>:<password>@<neon-host>:5432/estetica_dev"
+$env:SHADOW_DATABASE_URL="postgresql://<user>:<password>@<neon-host>:5432/estetica_shadow"
+
+npx prisma migrate reset # responde "y" cuando lo pida
+npx prisma generate
+npx prisma migrate status
+npx prisma db seed
+npx prisma studio
+```
+
+Con el backend levantado (`npm run dev`), puedes hacer smoke tests rápidos:
+
+```powershell
+cd backend
+npm run dev
+# En otra consola PowerShell / Git Bash
+curl.exe -i -c cookies.txt -H "Content-Type: application/json" -d '{"email":"admin@estetica.mx","password":"changeme123"}' http://localhost:3000/api/login
+curl.exe -b cookies.txt http://localhost:3000/api/me
+curl.exe -N -b cookies.txt http://localhost:3000/api/events
+```
+
+### Notas clave
+- Evita recrear enums existentes. Si solo agregas un valor usa `ALTER TYPE "Role" ADD VALUE 'NUEVO';`. Si necesitas una refactorización mayor sigue la secuencia segura (`DROP DEFAULT` → crear tipo temporal → castear → `DROP TYPE` viejo → renombrar → restaurar default).
+- Usa `PRISMA_MIGRATION_SKIP_SHADOW_DATABASE="1"` solo como último recurso (por ejemplo, si Neon bloquea conexiones paralelas). Lo ideal es mantener la shadow DB activa para validar migraciones.
+- Tras correr `npx prisma migrate reset`, confirma que `npx prisma db seed` termina sin errores y que en Prisma Studio (`npx prisma studio`) el modelo **Booking** muestra `invitedEmails` como `text[]` con default `[]`, así como los campos opcionales `confirmedEmail`, `performedByName`, `completedBy`, `assignedEmail`, `assignedAt` y `amountOverride`.
 En otra terminal:
 ```bash
 # Landing (http://localhost:3001)

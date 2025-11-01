@@ -1,5 +1,8 @@
 -- CreateEnum
-CREATE TYPE "Role" AS ENUM ('ADMIN', 'EMPLOYEE', 'CLIENT');
+CREATE TYPE "Role" AS ENUM ('ADMIN', 'EMPLOYEE');
+
+-- CreateEnum
+CREATE TYPE "AssignmentStatus" AS ENUM ('pending', 'accepted', 'declined', 'expired');
 
 -- CreateEnum
 CREATE TYPE "BookingStatus" AS ENUM ('scheduled', 'confirmed', 'done', 'canceled');
@@ -28,7 +31,7 @@ CREATE TABLE "Service" (
     "duration" INTEGER NOT NULL,
     "description" TEXT,
     "imageUrl" TEXT,
-    "highlights" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "highlights" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -44,6 +47,8 @@ CREATE TABLE "Booking" (
     "endTime" TIMESTAMP(3) NOT NULL,
     "status" "BookingStatus" NOT NULL DEFAULT 'scheduled',
     "notes" TEXT,
+    "assignedEmail" TEXT,
+    "assignedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -74,6 +79,20 @@ CREATE TABLE "Product" (
     CONSTRAINT "Product_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "Assignment" (
+    "id" TEXT NOT NULL,
+    "bookingId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "status" "AssignmentStatus" NOT NULL DEFAULT 'pending',
+    "token" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Assignment_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -93,6 +112,9 @@ CREATE INDEX "Booking_status_idx" ON "Booking"("status");
 CREATE INDEX "Booking_serviceId_idx" ON "Booking"("serviceId");
 
 -- CreateIndex
+CREATE INDEX "Booking_assignedEmail_idx" ON "Booking"("assignedEmail");
+
+-- CreateIndex
 CREATE INDEX "Payment_createdAt_idx" ON "Payment"("createdAt");
 
 -- CreateIndex
@@ -104,9 +126,24 @@ CREATE INDEX "Product_name_idx" ON "Product"("name");
 -- CreateIndex
 CREATE INDEX "Product_stock_idx" ON "Product"("stock");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "Assignment_token_key" ON "Assignment"("token");
+
+-- CreateIndex
+CREATE INDEX "Assignment_bookingId_idx" ON "Assignment"("bookingId");
+
+-- CreateIndex
+CREATE INDEX "Assignment_status_idx" ON "Assignment"("status");
+
+-- CreateIndex
+CREATE INDEX "Assignment_expiresAt_idx" ON "Assignment"("expiresAt");
+
 -- AddForeignKey
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Assignment" ADD CONSTRAINT "Assignment_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

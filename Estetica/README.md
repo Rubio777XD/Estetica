@@ -9,7 +9,9 @@
 ### Backend (`backend/.env`)
 ```env
 PORT=3000
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+DATABASE_URL=postgresql://USER:PASSWORD@HOST-POOLER/DATABASE
+DIRECT_URL=postgresql://USER:PASSWORD@HOST/DATABASE
+SHADOW_DATABASE_URL=postgresql://USER:PASSWORD@HOST/estetica_shadow
 JWT_SECRET=clave_super_segura
 SESSION_COOKIE_NAME=salon_auth
 SESSION_COOKIE_DOMAIN= # opcional, establece el dominio en producción
@@ -28,6 +30,8 @@ RESEND_API_KEY= # opcional, usa API HTTP de Resend en vez de SMTP
 RESEND_API_URL=https://api.resend.com # opcional
 ```
 - En desarrollo la cookie se emite con `Secure=false`, `SameSite=Lax` y `HttpOnly=true`. En producción el proxy debe estar en HTTPS para habilitar `Secure=true`.
+- `DATABASE_URL` usa el pooler de Neon para las conexiones de la API; `DIRECT_URL` y `SHADOW_DATABASE_URL` usan el endpoint directo (sin `-pooler`).
+- `estetica_shadow` debe existir en Neon y permanecer vacía (sólo la usa Prisma para la shadow database durante `migrate dev`).
 - Si las variables SMTP no se configuran, los correos se registran en consola (modo mock) pero no se envían.
   - Alternativamente, define `RESEND_API_KEY` para enviar correos mediante la API de Resend.
 
@@ -57,10 +61,38 @@ Modelos principales (ver `backend/prisma/schema.prisma`):
 cd backend
 npm install
 npm run prisma:migrate      # aplica migraciones (usa DATABASE_URL)
+npm run prisma:reset        # reinicia la base (usa SHADOW_DATABASE_URL) - sólo en entornos de desarrollo
 npm run prisma:seed         # inserta datos demo (servicios, citas, pagos, productos)
 ```
-- **Reset rápido:** `npx prisma migrate reset` (borra y recrea la BD, vuelve a ejecutar el seed).
+- **Reset rápido:** `npm run prisma:reset` (borra y recrea la BD, vuelve a ejecutar el seed). No lo utilices en producción.
 - El seed crea: 5 servicios, 7 citas recientes repartidas por estado, 2 pagos y 4 productos (3 de ellos en stock bajo).
+
+### Cómo aplicar migraciones con Neon (baseline + shadow)
+
+1. **Pre-requisitos**
+   - Crea manualmente la base de datos vacía `estetica_shadow` en el proyecto de Neon.
+   - Configura las variables en `backend/.env`:
+     - `DATABASE_URL`: endpoint con `-pooler` apuntando a `estetica_dev`.
+     - `DIRECT_URL`: endpoint directo (sin `-pooler`) a `estetica_dev`.
+     - `SHADOW_DATABASE_URL`: endpoint directo a `estetica_shadow` (debe permanecer vacía).
+
+2. **Generar/actualizar la baseline**
+   - En macOS/Linux: `npm run prisma:baseline` (verifica que `DIRECT_URL` y `SHADOW_DATABASE_URL` estén definidos).
+   - En Windows (PowerShell): `npm run prisma:baseline:ps`.
+   - Ambos scripts crean `prisma/migrations/<timestamp>_baseline/migration.sql` utilizando `prisma migrate diff --from-empty --to-url "$DIRECT_URL" --script`.
+   - Después de generarla, marca la baseline como aplicada en la base existente: `npx prisma migrate resolve --applied <timestamp>_baseline`.
+
+3. **Aplicar migraciones en desarrollo**
+   - `npm run prisma:migrate` aplica migraciones nuevas usando el pooler.
+   - `npm run prisma:reset` recrea la base (usa la shadow), ejecuta todas las migraciones y vuelve a correr el seed. Úsalo solo en entornos locales.
+
+4. **Semillas**
+   - `npm run prisma:seed` ejecuta `prisma/seed.ts` contra la base definida en `DATABASE_URL`.
+
+#### FAQ
+- **P3006 / P1014 (tabla o enum inexistente en la shadow):** asegúrate de que `SHADOW_DATABASE_URL` apunte a `estetica_shadow` vacía y que exista la baseline con el esquema completo.
+- **`--to-url` en PowerShell no respeta variables:** utiliza `npm run prisma:baseline:ps`, que valida `DIRECT_URL` y pasa la URL literal a Prisma.
+- **¿Puedo ejecutar `prisma migrate reset` en producción?** No; borra la base. Usa únicamente los comandos de despliegue (`prisma migrate deploy`) en entornos con datos reales.
 
 ## Puesta en marcha en desarrollo
 ```bash

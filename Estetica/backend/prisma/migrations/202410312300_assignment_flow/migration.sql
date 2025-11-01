@@ -5,15 +5,19 @@ DROP TYPE "Role";
 ALTER TYPE "Role_new" RENAME TO "Role";
 ALTER TABLE "User" ALTER COLUMN "role" SET DEFAULT 'EMPLOYEE';
 
--- CreateEnum
-CREATE TYPE "AssignmentStatus" AS ENUM ('pending', 'accepted', 'declined', 'expired');
+DO $$
+BEGIN
+    CREATE TYPE "AssignmentStatus" AS ENUM ('pending', 'accepted', 'declined', 'expired');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- AlterTable
-ALTER TABLE "Booking" ADD COLUMN "assignedEmail" TEXT;
-ALTER TABLE "Booking" ADD COLUMN "assignedAt" TIMESTAMP(3);
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "assignedEmail" TEXT;
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "assignedAt" TIMESTAMP(3);
 
 -- CreateTable
-CREATE TABLE "Assignment" (
+CREATE TABLE IF NOT EXISTS "Assignment" (
     "id" TEXT NOT NULL,
     "bookingId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -26,11 +30,16 @@ CREATE TABLE "Assignment" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Assignment_token_key" ON "Assignment"("token");
-CREATE INDEX "Assignment_bookingId_idx" ON "Assignment"("bookingId");
-CREATE INDEX "Assignment_status_idx" ON "Assignment"("status");
-CREATE INDEX "Assignment_expiresAt_idx" ON "Assignment"("expiresAt");
-CREATE INDEX "Booking_assignedEmail_idx" ON "Booking"("assignedEmail");
+CREATE UNIQUE INDEX IF NOT EXISTS "Assignment_token_key" ON "Assignment"("token");
+CREATE INDEX IF NOT EXISTS "Assignment_bookingId_idx" ON "Assignment"("bookingId");
+CREATE INDEX IF NOT EXISTS "Assignment_status_idx" ON "Assignment"("status");
+CREATE INDEX IF NOT EXISTS "Assignment_expiresAt_idx" ON "Assignment"("expiresAt");
+CREATE INDEX IF NOT EXISTS "Booking_assignedEmail_idx" ON "Booking"("assignedEmail");
 
 -- AddForeignKey
-ALTER TABLE "Assignment" ADD CONSTRAINT "Assignment_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+    ALTER TABLE "Assignment" ADD CONSTRAINT "Assignment_bookingId_fkey" FOREIGN KEY ("bookingId") REFERENCES "Booking"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;

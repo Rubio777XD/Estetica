@@ -3,11 +3,16 @@ import bcrypt from 'bcryptjs';
 
 type SeedClient = PrismaClient | Prisma.TransactionClient;
 
+type RunSeedOptions = {
+  silent?: boolean;
+};
+
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60000);
 }
 
-export async function runSeed(prisma: SeedClient) {
+export async function runSeed(prisma: SeedClient, options: RunSeedOptions = {}) {
+  const { silent = false } = options;
   const passwordHash = await bcrypt.hash('changeme123', 10);
 
   const admin = await prisma.user.upsert({
@@ -251,16 +256,46 @@ export async function runSeed(prisma: SeedClient) {
     });
   }
 
-  console.info('Seed completed with user:', admin.email);
+  if (!silent) {
+    console.info('Seed completed with user:', admin.email);
+  }
 
   return { adminEmail: admin.email };
+}
+
+class SeedDryRunRequestedError extends Error {
+  constructor() {
+    super('SEED_DRY_RUN_REQUESTED');
+    this.name = 'SEED_DRY_RUN_REQUESTED';
+  }
+}
+
+export async function dryRunSeed(prisma: PrismaClient) {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await runSeed(tx as Prisma.TransactionClient, { silent: true });
+      throw new SeedDryRunRequestedError();
+    });
+    throw new Error('La transacción de dry-run del seed se comprometió inesperadamente.');
+  } catch (error) {
+    if (error instanceof SeedDryRunRequestedError) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function applySeed(prisma: PrismaClient) {
+  return prisma.$transaction((tx) => runSeed(tx as Prisma.TransactionClient));
 }
 
 async function main() {
   const prisma = new PrismaClient();
 
   try {
-    await runSeed(prisma);
+    await dryRunSeed(prisma);
+    console.info('Seed dry-run completado y revertido. Ejecutando seed definitivo...');
+    await applySeed(prisma);
   } catch (error) {
     console.error('Seed failed', error);
     process.exitCode = 1;

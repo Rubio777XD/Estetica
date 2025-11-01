@@ -1,41 +1,26 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import process from 'node:process';
 
-import { runSeed } from '../prisma/seed';
+import { applySeed, dryRunSeed } from '../prisma/seed';
 
 const args = new Set(process.argv.slice(2));
-const applySeed = args.has('--apply');
+const shouldApply = args.has('--apply');
 
 const prisma = new PrismaClient();
 
-const ROLLBACK_SENTINEL = new Error('ROLLBACK_REQUESTED');
-ROLLBACK_SENTINEL.name = 'ROLLBACK_REQUESTED';
-
 async function executeDryRun() {
-  try {
-    await prisma.$transaction(async (tx) => {
-      await runSeed(tx as Prisma.TransactionClient);
-      throw ROLLBACK_SENTINEL;
-    });
-    console.error('La transacción de validación del seed se comprometió inesperadamente.');
-    process.exitCode = 1;
-  } catch (error) {
-    if (error instanceof Error && error.name === ROLLBACK_SENTINEL.name) {
-      console.log('✅ Seed dry-run completado. La transacción fue revertida correctamente.');
-    } else {
-      throw error;
-    }
-  }
+  await dryRunSeed(prisma);
+  console.log('✅ Seed dry-run completado. La transacción fue revertida correctamente.');
 }
 
 async function executeApply() {
-  await runSeed(prisma);
-  console.log('✅ Seed aplicado correctamente.');
+  const result = await applySeed(prisma);
+  console.log(`✅ Seed aplicado correctamente (${result.adminEmail}).`);
 }
 
 async function main() {
   try {
-    if (applySeed) {
+    if (shouldApply) {
       await executeApply();
     } else {
       await executeDryRun();

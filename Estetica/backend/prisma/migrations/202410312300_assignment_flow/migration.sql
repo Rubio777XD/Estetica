@@ -16,13 +16,6 @@ ALTER TYPE "Role_new" RENAME TO "Role";
 
 ALTER TABLE "User" ALTER COLUMN "role" SET DEFAULT 'EMPLOYEE';
 
-DO $$
-BEGIN
-    CREATE TYPE "AssignmentStatus" AS ENUM ('pending', 'accepted', 'declined', 'expired');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
-
 -- AlterTable
 ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "assignedEmail" TEXT;
 ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "assignedAt" TIMESTAMP(3);

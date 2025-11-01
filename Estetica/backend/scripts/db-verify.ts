@@ -33,8 +33,13 @@ if (skipShadow) {
 }
 
 const prismaCli = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const schemaPath = join(projectRoot, 'prisma', 'schema.prisma');
 
-async function runCommand(command: string, commandArgs: string[], options: { cwd?: string; hint?: string } = {}) {
+async function runCommand(
+  command: string,
+  commandArgs: string[],
+  options: { cwd?: string; hint?: string } = {}
+) {
   const { cwd = projectRoot, hint } = options;
 
   await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -63,12 +68,80 @@ async function runCommand(command: string, commandArgs: string[], options: { cwd
   });
 }
 
+async function runCommandWithCapture(
+  command: string,
+  commandArgs: string[],
+  options: { cwd?: string; hint?: string; allowedExitCodes?: number[] } = {}
+) {
+  const { cwd = projectRoot, hint, allowedExitCodes = [0] } = options;
+
+  return new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolvePromise, rejectPromise) => {
+    const child = spawn(command, commandArgs, {
+      cwd,
+      env: commandEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+    });
+
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on('exit', (code) => {
+      const exitCode = typeof code === 'number' ? code : 1;
+      if (allowedExitCodes.includes(exitCode)) {
+        resolvePromise({ stdout, stderr, exitCode });
+      } else {
+        const baseError = new Error(
+          `${command} ${commandArgs.join(' ')} terminó con código ${exitCode}${stderr ? `\n${stderr.trim()}` : ''}`
+        );
+        if (hint) {
+          (baseError as Error & { hint?: string }).hint = hint;
+        }
+        rejectPromise(baseError);
+      }
+    });
+
+    child.on('error', (error) => {
+      rejectPromise(error);
+    });
+  });
+}
+
+function requireDatabaseUrl(): string {
+  const databaseUrl = commandEnv.DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL no está definido. Carga las variables de entorno antes de ejecutar db:verify.');
+  }
+  return databaseUrl;
+}
+
 function formatError(error: unknown): string {
-  if (error && typeof error === 'object' && 'hint' in error && typeof (error as any).hint === 'string') {
-    return `${(error as Error).message}\n${(error as any).hint}`;
+  if (error instanceof Error) {
+    const hint = (error as Error & { hint?: string }).hint;
+    return hint ? `${error.message}\n${hint}` : error.message;
   }
 
-  return error instanceof Error ? error.message : String(error);
+  if (error && typeof error === 'object') {
+    const message = 'message' in error && typeof (error as { message?: unknown }).message === 'string'
+      ? (error as { message: string }).message
+      : JSON.stringify(error);
+    const hint = 'hint' in error && typeof (error as { hint?: unknown }).hint === 'string'
+      ? (error as { hint: string }).hint
+      : undefined;
+    return hint ? `${message}\n${hint}` : message;
+  }
+
+  return String(error);
 }
 
 async function getMigrationDirectories(): Promise<string[]> {
@@ -206,10 +279,78 @@ checks.push({
 });
 
 checks.push({
+  name: 'prisma migrate diff (DB -> schema)',
+  run: async () => {
+    const databaseUrl = requireDatabaseUrl();
+    const diffArgs = [
+      'prisma',
+      'migrate',
+      'diff',
+      '--from-url',
+      databaseUrl,
+      '--to-schema-datamodel',
+      schemaPath,
+      '--exit-code',
+    ];
+
+    const result = await runCommandWithCapture(prismaCli, diffArgs, {
+      allowedExitCodes: [0, 2],
+      hint:
+        'Ejecuta "npx prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel prisma/schema.prisma" para revisar el detalle y sincroniza los cambios.',
+    });
+
+    const normalizedStdout = result.stdout.trim();
+    if (normalizedStdout.length > 0) {
+      console.log(normalizedStdout);
+    }
+
+    if (result.exitCode === 2) {
+      throw new Error(
+        `${normalizedStdout || 'Se detectaron diferencias entre la base de datos y prisma/schema.prisma.'}\nGenera una migración o sincroniza la base de datos antes de continuar.`
+      );
+    }
+  },
+});
+
+checks.push({
   name: 'prisma migrate dev (shadow check)',
   run: () =>
     ensureNoNewMigrationsDuringDev(['migrate', 'dev', '--skip-generate', '--skip-seed', '--create-only', '--name', '__db_verify__']),
 });
+
+if (runDeep) {
+  checks.push({
+    name: 'prisma migrate diff (migrations -> schema)',
+    run: async () => {
+      const diffArgs = [
+        'prisma',
+        'migrate',
+        'diff',
+        '--from-migrations',
+        '--to-schema-datamodel',
+        schemaPath,
+        '--exit-code',
+      ];
+
+      const result = await runCommandWithCapture(prismaCli, diffArgs, {
+        allowedExitCodes: [0, 2],
+        hint:
+          'Ejecuta "npx prisma migrate diff --from-migrations --to-schema-datamodel prisma/schema.prisma" para revisar la diferencia exacta entre el schema y las migraciones.',
+      });
+
+      const normalizedStdout = result.stdout.trim();
+      if (normalizedStdout.length > 0) {
+        console.log(normalizedStdout);
+      }
+
+      if (result.exitCode === 2) {
+        throw new Error(
+          `${normalizedStdout || 'Se detectaron diferencias entre prisma/schema.prisma y las migraciones aplicadas.'}\nEjecuta "npx prisma migrate dev --name <cambio>" o alinea manualmente los archivos.`
+        );
+      }
+    },
+  });
+}
 
 checks.push({
   name: 'Migraciones sin BOM ni duplicados',

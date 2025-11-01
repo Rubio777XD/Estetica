@@ -64,8 +64,8 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      <div className="flex flex-col justify-end gap-3 sm:flex-row sm:items-center">
+    <div className="dashboard-page">
+      <div className="dashboard-page__actions">
         <Button
           variant="outline"
           size="sm"
@@ -77,14 +77,14 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+      <div className="dashboard-grid dashboard-grid--two">
+        <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-gray-500" />
-              <CardTitle className="text-lg font-semibold text-gray-900">Citas de hoy</CardTitle>
+              <CardTitle className="text-gray-900">Citas de hoy</CardTitle>
             </div>
-            <p className="text-sm text-gray-500">Resumen rápido del estado de las citas programadas para la fecha actual.</p>
+            <p className="dashboard-section-subtitle">Resumen rápido del estado de las citas programadas para la fecha actual.</p>
           </CardHeader>
           <CardContent>
             {overviewStatus === 'loading' ? (
@@ -120,13 +120,13 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+        <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-gray-500" />
-              <CardTitle className="text-lg font-semibold text-gray-900">Servicios más solicitados</CardTitle>
+              <CardTitle className="text-gray-900">Servicios más solicitados</CardTitle>
             </div>
-            <p className="text-sm text-gray-500">Ranking basado en las citas agendadas recientemente.</p>
+            <p className="dashboard-section-subtitle">Ranking basado en las citas agendadas recientemente.</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {overviewStatus === 'loading' ? (
@@ -163,14 +163,14 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+      <div className="dashboard-grid dashboard-grid--two">
+        <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <Clock3 className="h-5 w-5 text-gray-500" />
-              <CardTitle className="text-lg font-semibold text-gray-900">Citas próximas</CardTitle>
+              <CardTitle className="text-gray-900">Citas próximas</CardTitle>
             </div>
-            <p className="text-sm text-gray-500">Las próximas 5 citas asignadas a colaboradoras.</p>
+            <p className="dashboard-section-subtitle">Las próximas 5 citas asignadas a colaboradoras.</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {upcomingStatus === 'loading' ? (
@@ -217,13 +217,13 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+        <Card>
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-gray-500" />
-              <CardTitle className="text-lg font-semibold text-gray-900">Citas pendientes</CardTitle>
+              <CardTitle className="text-gray-900">Citas pendientes</CardTitle>
             </div>
-            <p className="text-sm text-gray-500">Citas sin asignar que requieren atención inmediata.</p>
+            <p className="dashboard-section-subtitle">Citas sin asignar que requieren atención inmediata.</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {pendingStatus === 'loading' ? (

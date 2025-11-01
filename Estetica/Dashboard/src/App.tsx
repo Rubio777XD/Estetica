@@ -362,7 +362,7 @@ function AppShell() {
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-900">
+            <h1 className="dashboard-page-title text-gray-900">
               {navigationItems.find((item) => item.id === activeSection)?.label ||
                 menuItems.find((item) => item.id === activeSection)?.label ||
                 'Dashboard'}
@@ -385,7 +385,7 @@ function AppShell() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto">
           {renderContent()}
         </main>
       </div>

@@ -66,7 +66,7 @@ export function HomeSection({ onNavigate }: HomeSectionProps) {
               {/* Main Title with Crossfade */}
               <div className="relative">
                 <h1
-                  className={`hero-title font-heading text-4xl sm:text-5xl md:text-6xl lg:text-7xl leading-tight ${
+                  className={`hero-title font-heading landing-title-xl ${
                     isLoaded && !isTransitioning
                       ? "stagger-1"
                       : isTransitioning
@@ -74,8 +74,6 @@ export function HomeSection({ onNavigate }: HomeSectionProps) {
                       : "opacity-0"
                   }`}
                   style={{
-                    letterSpacing: "-0.02em",
-                    lineHeight: "1.04",
                     color: "#ffffff",
                   }}
                 >

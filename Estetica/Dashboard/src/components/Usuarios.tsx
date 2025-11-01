@@ -115,11 +115,11 @@ export default function Usuarios({ isAdmin }: UsuariosProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="dashboard-page">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-semibold">Crear nuevo usuario</CardTitle>
+            <CardTitle className="text-gray-900">Crear nuevo usuario</CardTitle>
             <UserPlus className="h-5 w-5 text-muted-foreground" />
           </div>
         </CardHeader>
@@ -181,7 +181,7 @@ export default function Usuarios({ isAdmin }: UsuariosProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg font-semibold">Equipo registrado</CardTitle>
+          <CardTitle className="text-gray-900">Equipo registrado</CardTitle>
         </CardHeader>
         <CardContent>
           {status === 'loading' ? (
@@ -202,8 +202,8 @@ export default function Usuarios({ isAdmin }: UsuariosProps) {
           ) : sortedUsers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Aún no hay usuarios registrados.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+            <div className="dashboard-table-wrapper">
+              <table className="dashboard-table text-sm">
                 <thead>
                   <tr className="text-left text-muted-foreground">
                     <th className="py-2 pr-4 font-medium">Correo</th>

@@ -78,7 +78,7 @@ export function ContactSection() {
       <div className="container mx-auto px-6">
         {/* Section Header */}
         <div className="text-center mb-16">
-          <h2 className="font-heading mb-4" style={{ color: '#ffffff' }}>
+          <h2 className="font-heading landing-title-lg mb-4" style={{ color: '#ffffff' }}>
             Contacto & Ubicación
           </h2>
           <div className="w-24 h-0.5 bg-luxury-gold mx-auto mb-6 luxury-glow"></div>

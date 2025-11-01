@@ -36,7 +36,7 @@ export function AboutSection() {
         {/* Section Header */}
         <div className="text-center mb-16">
           <h2
-            className="font-serif text-4xl md:text-5xl mb-4"
+            className="font-serif landing-title-lg mb-4"
             style={{ color: "#ffffff" }}
           >
             Sobre Nosotros

@@ -408,11 +408,11 @@ export default function CitasProximas() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="dashboard-page">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Citas próximas</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="dashboard-section-title text-gray-900">Citas próximas</h2>
+          <p className="dashboard-section-subtitle">
             Gestiona las citas asignadas y registra el cobro al completarlas. {overrideCount > 0 ? `${overrideCount} citas con monto editado.` : ''}
           </p>
         </div>
@@ -584,9 +584,9 @@ export default function CitasProximas() {
               ¿Seguro que quieres cancelar? Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogCancel onClick={() => setCancelDialog(null)}>Atrás</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmCancel}>
+            <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300" onClick={handleConfirmCancel}>
               Cancelar cita
             </AlertDialogAction>
           </AlertDialogFooter>

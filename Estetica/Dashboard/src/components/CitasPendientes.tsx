@@ -457,11 +457,11 @@ export default function CitasPendientes() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="dashboard-page">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Citas pendientes</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="dashboard-section-title text-gray-900">Citas pendientes</h2>
+          <p className="dashboard-section-subtitle">
             Asigna colaboradoras, ajusta detalles o cancela citas que aún no se han confirmado.
           </p>
         </div>

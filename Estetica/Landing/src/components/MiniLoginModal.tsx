@@ -259,7 +259,7 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-editorial-beige/60 bg-editorial-beige px-6 py-3 text-sm font-semibold uppercase tracking-wide text-black shadow-[0_6px_20px_rgba(234,220,199,0.25)] transition-all duration-200 hover:bg-editorial-beige/90 hover:shadow-[0_10px_28px_rgba(234,220,199,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-editorial-beige/60 bg-editorial-beige px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white shadow-[0_6px_20px_rgba(234,220,199,0.25)] transition-all duration-200 hover:bg-editorial-beige/90 hover:shadow-[0_10px_28px_rgba(234,220,199,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLoading ? (
                     <>

@@ -59,6 +59,13 @@
   --luxury-black: var(--background);
   --luxury-white: var(--text-primary);
   --luxury-gray: var(--text-secondary);
+
+  /* Landing title scale */
+  --title-xl: clamp(2.75rem, 6vw, 4.5rem);
+  --title-lg: clamp(2rem, 4vw, 3.25rem);
+  --title-md: clamp(1.5rem, 3vw, 2.25rem);
+  --title-line-tight: 1.08;
+  --title-line-cozy: 1.18;
 }
 
 /* Typography System */
@@ -72,6 +79,24 @@
 
 .font-heading {
   font-family: 'Playfair Display', serif;
+}
+
+.landing-title-xl {
+  font-size: var(--title-xl);
+  line-height: var(--title-line-tight);
+  letter-spacing: -0.02em;
+}
+
+.landing-title-lg {
+  font-size: var(--title-lg);
+  line-height: var(--title-line-tight);
+  letter-spacing: -0.015em;
+}
+
+.landing-title-md {
+  font-size: var(--title-md);
+  line-height: var(--title-line-cozy);
+  letter-spacing: -0.01em;
 }
 
 .font-body {

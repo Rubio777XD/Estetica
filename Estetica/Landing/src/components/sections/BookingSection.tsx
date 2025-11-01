@@ -302,7 +302,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
             <div className="p-12 text-center">
               <div className="mb-8">
                 <CheckCircle className="w-20 h-20 text-editorial-beige mx-auto mb-6" style={{ filter: 'drop-shadow(0 0 10px rgba(234, 220, 199, 0.4))' }} />
-                <h2 className="font-heading mb-4" style={{ color: '#ffffff' }}>
+                <h2 className="font-heading landing-title-md mb-4" style={{ color: '#ffffff' }}>
                   ¡Cita Agendada Exitosamente!
                 </h2>
                 <div className="w-24 h-0.5 bg-editorial-beige mx-auto mb-6" style={{ boxShadow: '0 0 8px rgba(234, 220, 199, 0.4)' }}></div>
@@ -377,7 +377,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       <div className="container mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="font-heading mb-4" style={{ color: '#ffffff' }}>
+          <h2 className="font-heading landing-title-lg mb-4" style={{ color: '#ffffff' }}>
             Agenda tu Cita
           </h2>
           <div className="w-24 h-0.5 bg-editorial-beige mx-auto mb-6" style={{ boxShadow: '0 0 8px rgba(234, 220, 199, 0.4)' }}></div>
@@ -570,8 +570,6 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                                       ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
                                       : isDisabled
                                       ? 'cursor-not-allowed border-white/10 text-white/30'
-                                      : hasConflict
-                                      ? 'border-editorial-beige/50 bg-white/5 text-white hover:border-editorial-beige hover:text-editorial-beige'
                                       : 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
                                   }`}
                                   title={
@@ -585,11 +583,6 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                                   <span className="block">
                                     {slotTimeFormatter.format(new Date(slot.start))}
                                   </span>
-                                  {hasConflict ? (
-                                    <span className="mt-1 block text-[11px] font-normal uppercase tracking-wide text-editorial-beige/80">
-                                      Horario con otra cita (permitido)
-                                    </span>
-                                  ) : null}
                                 </button>
                               );
                             })}

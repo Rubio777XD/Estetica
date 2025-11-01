@@ -175,7 +175,7 @@ export function LuxuryFooter() {
         <div className="border-t border-gray-800 mb-8" />
 
         {/* Bottom Section */}
-        <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+        <div className="flex flex-col md:flex-row md:justify-between items-center space-y-4 md:space-y-0">
           <div className="flex flex-col md:flex-row items-center space-y-2 md:space-y-0 md:space-x-6 font-sans text-gray-400 text-sm">
             <p>
               © {YEAR} {BRAND} — {OWNER}. Todos los derechos reservados.
@@ -188,12 +188,6 @@ export function LuxuryFooter() {
                 Términos de Servicio
               </button>
             </div>
-          </div>
-
-          <div className="flex items-center space-x-2 font-sans text-gray-400 text-xs">
-            <span>Certificada por el CONOCER</span>
-            <div className="w-1 h-1 bg-amber-400 rounded-full" />
-            <span>Hecho con ♥</span>
           </div>
         </div>
       </div>

@@ -199,8 +199,8 @@ export default function Inventario() {
     }
 
     return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="dashboard-table-wrapper">
+        <table className="dashboard-table divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
@@ -247,7 +247,7 @@ export default function Inventario() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto w-full">
+    <div className="dashboard-page">
       <Card className="shadow-sm">
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

@@ -118,7 +118,7 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
         {/* Section Header */}
         <div className="text-center mb-16">
           <div className="inline-block">
-            <h2 className="font-heading text-4xl md:text-5xl mb-4 luxury-text-shadow" style={{ color: '#ffffff' }}>
+            <h2 className="font-heading landing-title-lg mb-4 luxury-text-shadow" style={{ color: '#ffffff' }}>
               Nuestros Servicios
             </h2>
             <div className="w-24 h-0.5 bg-primary mx-auto mb-6"></div>

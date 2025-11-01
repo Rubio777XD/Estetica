@@ -8,8 +8,8 @@ import { isWithin24Hours } from '../utils/time';
 
 const verifySignature = (signature: string | undefined, payload: Buffer) => {
   if (!signature) {
-    logger.warn('X-Hub-Signature-256 ausente; omitiendo verificación de firma');
-    return true;
+    logger.warn('X-Hub-Signature-256 ausente; rechazando solicitud');
+    return false;
   }
 
   const expected = `sha256=${createHmac('sha256', config.meta.appSecret).update(payload).digest('hex')}`;

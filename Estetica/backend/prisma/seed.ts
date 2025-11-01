@@ -92,56 +92,84 @@ async function main() {
     {
       id: 'booking-scheduled-1',
       clientName: 'María López',
+      clientEmail: 'maria.lopez@example.com',
       serviceId: manicure.id,
       startOffsetMinutes: -60,
       status: BookingStatus.scheduled,
       notes: 'Prefiere esmalte rojo',
+      invitedEmails: ['turnos@estetica.mx', 'soporte@estetica.mx'],
     },
     {
       id: 'booking-confirmed-1',
       clientName: 'Ana García',
+      clientEmail: 'ana.garcia@example.com',
       serviceId: pedicure.id,
       startOffsetMinutes: 180,
       status: BookingStatus.confirmed,
       notes: 'Agregar masaje de pies',
+      invitedEmails: ['pedicure.team@estetica.mx'],
+      confirmedEmail: 'ana.garcia@example.com',
     },
     {
       id: 'booking-done-1',
       clientName: 'Laura Méndez',
+      clientEmail: 'laura.mendez@example.com',
       serviceId: lifting.id,
       startOffsetMinutes: -1440,
       status: BookingStatus.done,
       notes: 'Cliente recurrente',
+      invitedEmails: ['lashes@estetica.mx'],
+      confirmedEmail: 'laura.mendez@example.com',
+      assignedEmail: 'daniela@estetica.mx',
+      assignedAtOffsetMinutes: -720,
+      performedByName: 'Daniela Stylist',
+      completedBy: 'daniela@estetica.mx',
     },
     {
       id: 'booking-canceled-1',
       clientName: 'Sofía Pérez',
+      clientEmail: 'sofia.perez@example.com',
       serviceId: manicure.id,
       startOffsetMinutes: -2880,
       status: BookingStatus.canceled,
       notes: 'Canceló por enfermedad',
+      invitedEmails: ['manicure.team@estetica.mx'],
     },
     {
       id: 'booking-done-2',
       clientName: 'Fernanda Ruiz',
+      clientEmail: 'fernanda.ruiz@example.com',
       serviceId: extension.id,
       startOffsetMinutes: -4320,
       status: BookingStatus.done,
       notes: 'Solicitó diseño natural',
+      invitedEmails: ['extension@estetica.mx', 'staff@estetica.mx'],
+      confirmedEmail: 'fernanda.ruiz@example.com',
+      assignedEmail: 'alejandra@estetica.mx',
+      assignedAtOffsetMinutes: -1440,
+      performedByName: 'Alejandra Rivera',
+      completedBy: 'alejandra@estetica.mx',
+      amountOverride: 710,
     },
     {
       id: 'booking-confirmed-2',
       clientName: 'Claudia Díaz',
+      clientEmail: 'claudia.diaz@example.com',
       serviceId: lifting.id,
       startOffsetMinutes: 720,
       status: BookingStatus.confirmed,
+      invitedEmails: ['coordinacion@estetica.mx'],
+      confirmedEmail: 'claudia.diaz@example.com',
+      amountOverride: 360,
     },
     {
       id: 'booking-scheduled-2',
       clientName: 'Isabella Cano',
+      clientEmail: 'isabella.cano@example.com',
       serviceId: extension.id,
       startOffsetMinutes: 2160,
       status: BookingStatus.scheduled,
+      invitedEmails: [],
     },
   ];
 
@@ -150,24 +178,34 @@ async function main() {
   for (const seed of bookingSeeds) {
     const baseStart = addMinutes(today, seed.startOffsetMinutes);
     const service = services.find((s) => s.id === seed.serviceId)!;
+    const assignedAt =
+      typeof seed.assignedAtOffsetMinutes === 'number'
+        ? addMinutes(baseStart, seed.assignedAtOffsetMinutes)
+        : undefined;
+
+    const bookingData = {
+      clientName: seed.clientName,
+      clientEmail: seed.clientEmail ?? null,
+      serviceId: seed.serviceId,
+      startTime: baseStart,
+      endTime: addMinutes(baseStart, service.duration),
+      status: seed.status,
+      notes: seed.notes,
+      invitedEmails: seed.invitedEmails ?? [],
+      confirmedEmail: seed.confirmedEmail ?? null,
+      assignedEmail: seed.assignedEmail ?? null,
+      assignedAt: assignedAt ?? null,
+      performedByName: seed.performedByName ?? null,
+      completedBy: seed.completedBy ?? null,
+      amountOverride: seed.amountOverride ?? null,
+    };
+
     const booking = await prisma.booking.upsert({
       where: { id: seed.id },
-      update: {
-        clientName: seed.clientName,
-        serviceId: seed.serviceId,
-        startTime: baseStart,
-        endTime: addMinutes(baseStart, service.duration),
-        status: seed.status,
-        notes: seed.notes,
-      },
+      update: bookingData,
       create: {
         id: seed.id,
-        clientName: seed.clientName,
-        serviceId: seed.serviceId,
-        startTime: baseStart,
-        endTime: addMinutes(baseStart, service.duration),
-        status: seed.status,
-        notes: seed.notes,
+        ...bookingData,
       },
     });
     bookings.push(booking);

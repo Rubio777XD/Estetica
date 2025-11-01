@@ -101,12 +101,47 @@ const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [BookingStatus.scheduled, BookingStatus.confirmed];
 
+const ensureSlotHasCapacity = async (tx: Prisma.TransactionClient, start: Date, end: Date) => {
+  if (isUnlimitedSlotCapacity) {
+    return;
+  }
+
+  const count = await tx.booking.count({
+    where: {
+      startTime: { lt: end },
+      endTime: { gt: start },
+      status: { in: ACTIVE_BOOKING_STATUSES },
+    },
+  });
+
+  if (count >= MAX_PARALLEL_BOOKINGS_PER_SLOT) {
+    throw new HttpError(409, 'Capacidad del horario agotada');
+  }
+};
+
 const roundCurrency = (value: number) => Math.round(value * 100) / 100;
 
 const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
 const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
 
 const PUBLIC_API_URL = (process.env.PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+const parseMaxParallelBookings = () => {
+  const raw = process.env.MAX_PARALLEL_BOOKINGS_PER_SLOT;
+  if (!raw) {
+    return Infinity;
+  }
+
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return Infinity;
+  }
+
+  return numeric;
+};
+
+const MAX_PARALLEL_BOOKINGS_PER_SLOT = parseMaxParallelBookings();
+const isUnlimitedSlotCapacity = MAX_PARALLEL_BOOKINGS_PER_SLOT === Infinity;
 
 const buildAssignmentAcceptUrl = (token: string) => {
   return `${PUBLIC_API_URL}/api/assignments/accept?token=${encodeURIComponent(token)}`;
@@ -881,6 +916,8 @@ protectedRouter.post(
         data.notes = normalized;
       }
 
+      await ensureSlotHasCapacity(tx, start, end);
+
       return tx.booking.create({
         data,
         include: { service: true, payments: true },
@@ -913,6 +950,7 @@ publicRouter.post(
         throw new HttpError(400, 'Fecha de inicio inválida');
       }
 
+      const end = addMinutes(start, service.duration);
       const normalized = normalizeNotes(notes);
       const normalizedClientEmail = clientEmail ? normalizeEmail(clientEmail) : null;
       const data: Parameters<typeof tx.booking.create>[0]['data'] = {
@@ -920,11 +958,13 @@ publicRouter.post(
         clientEmail: normalizedClientEmail,
         serviceId,
         startTime: start,
-        endTime: addMinutes(start, service.duration),
+        endTime: end,
       };
       if (normalized !== undefined) {
         data.notes = normalized;
       }
+
+      await ensureSlotHasCapacity(tx, start, end);
 
       return tx.booking.create({
         data,

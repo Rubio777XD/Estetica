@@ -16,6 +16,10 @@ npm install
 
 Copia el archivo `.env` de ejemplo (o solicita las credenciales) y asegúrate de completar las variables `DATABASE_URL`, `DIRECT_URL` y `SHADOW_DATABASE_URL`.
 
+### Capacidad de citas por horario
+
+El comportamiento predeterminado permite agendar reservas simultáneas ilimitadas en un mismo horario. Si en el futuro deseas limitar la capacidad por slot, define `MAX_PARALLEL_BOOKINGS_PER_SLOT` en el `.env` con el número máximo de citas activas (`scheduled`/`confirmed`) permitidas por horario. Cualquier valor vacío, no numérico o menor/igual a cero se interpreta como capacidad infinita.
+
 ## Scripts principales
 
 | Script | Descripción |
@@ -70,6 +74,11 @@ Los comandos `npm run db:seed:dry`, `npm run db:seed:apply` y `npm run db:reset-
 - Si `db:verify` falla por diferencias entre la base y el schema, revisa el mensaje emitido por `prisma migrate diff` y genera la migración correspondiente.
 - Para revisar logs detallados de las migraciones, ejecuta manualmente `npx prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel prisma/schema.prisma`.
 - Si trabajas con redes limitadas y no puedes usar shadow databases, añade `--skip-shadow` a `db:verify` o `db:audit`.
+
+## Pruebas manuales recomendadas
+
+- Crear dos o más reservas con la misma hora desde `/api/public/bookings` para verificar que todas se aceptan sin error.
+- Registrar una cita desde el bot de Instagram y confirmar que aparece en el Dashboard/backend.
 
 ## Estructura de migraciones
 

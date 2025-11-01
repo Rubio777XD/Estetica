@@ -100,7 +100,7 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
 
                 <Button
                   onClick={() => onNavigateToBooking(service.id)}
-                  className="w-full bg-transparent border border-white text-white hover:bg-white hover:text-black font-sans py-3 rounded-md transition-all duration-300"
+                  className="mt-4 w-full bg-transparent border border-white text-white hover:bg-white hover:text-black font-sans py-3 rounded-md transition-all duration-300"
                 >
                   Agendar este servicio
                 </Button>

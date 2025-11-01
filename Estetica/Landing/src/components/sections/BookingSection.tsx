@@ -17,6 +17,7 @@ type AvailabilitySlot = {
   start: string;
   end: string;
   available: boolean;
+  conflicted?: boolean;
 };
 
 const slotTimeFormatter = new Intl.DateTimeFormat("es-MX", {
@@ -556,21 +557,39 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             {availableSlots.map((slot) => {
                               const isSelected = selectedSlot === slot.start;
+                              const hasConflict = slot.conflicted === true;
+                              const isDisabled = !slot.available;
                               return (
                                 <button
                                   key={slot.start}
                                   type="button"
                                   onClick={() => handleSlotSelect(slot.start)}
-                                  disabled={!slot.available}
-                                  className={`rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                                  disabled={isDisabled}
+                                  className={`rounded-xl border px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 ${
                                     isSelected
                                       ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
-                                      : slot.available
-                                      ? 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
-                                      : 'cursor-not-allowed border-gray-300 bg-transparent text-gray-400 line-through'
+                                      : isDisabled
+                                      ? 'cursor-not-allowed border-white/10 text-white/30'
+                                      : hasConflict
+                                      ? 'border-editorial-beige/50 bg-white/5 text-white hover:border-editorial-beige hover:text-editorial-beige'
+                                      : 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
                                   }`}
+                                  title={
+                                    hasConflict
+                                      ? 'Hay otra cita en este horario, pero puedes continuar.'
+                                      : isDisabled
+                                      ? 'Este horario ya no está disponible.'
+                                      : undefined
+                                  }
                                 >
-                                  {slotTimeFormatter.format(new Date(slot.start))}
+                                  <span className="block">
+                                    {slotTimeFormatter.format(new Date(slot.start))}
+                                  </span>
+                                  {hasConflict ? (
+                                    <span className="mt-1 block text-[11px] font-normal uppercase tracking-wide text-editorial-beige/80">
+                                      Horario con otra cita (permitido)
+                                    </span>
+                                  ) : null}
                                 </button>
                               );
                             })}

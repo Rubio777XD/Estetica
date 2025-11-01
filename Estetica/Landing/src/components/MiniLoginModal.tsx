@@ -255,29 +255,23 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
                 </button>
               </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-3 px-4 bg-editorial-beige text-black rounded-xl font-medium transition-all duration-200 hover:bg-editorial-beige/90 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? (
-                  <div className="flex items-center justify-center">
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                    Iniciando sesión...
-                  </div>
-                ) : (
-                  'Iniciar Sesión'
-                )}
-              </button>
-            </form>
-
-            <div className="mt-6 p-4 bg-white/5 rounded-xl border border-white/10">
-              <p className="text-xs text-gray-400 mb-2 font-medium">Credenciales de prueba:</p>
-              <div className="space-y-1">
-                <p className="text-xs text-gray-300 font-mono">admin@estetica.mx</p>
-                <p className="text-xs text-gray-300 font-mono">password123</p>
+              <div className="flex justify-center">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-editorial-beige/60 bg-editorial-beige px-6 py-3 text-sm font-semibold uppercase tracking-wide text-black shadow-[0_6px_20px_rgba(234,220,199,0.25)] transition-all duration-200 hover:bg-editorial-beige/90 hover:shadow-[0_10px_28px_rgba(234,220,199,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                      Iniciando sesión...
+                    </>
+                  ) : (
+                    'Iniciar sesión'
+                  )}
+                </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       </div>

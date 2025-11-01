@@ -115,7 +115,12 @@ const ensureSlotHasCapacity = async (tx: Prisma.TransactionClient, start: Date, 
   });
 
   if (count >= MAX_PARALLEL_BOOKINGS_PER_SLOT) {
-    throw new HttpError(409, 'Capacidad del horario agotada');
+    console.warn('[booking] capacidad simultánea alcanzada, permitiendo traslape', {
+      start: start.toISOString(),
+      end: end.toISOString(),
+      count,
+      limit: MAX_PARALLEL_BOOKINGS_PER_SLOT,
+    });
   }
 };
 
@@ -549,13 +554,18 @@ publicRouter.get(
       select: { id: true, startTime: true, endTime: true },
     });
 
-    const slots: { start: string; end: string; available: boolean }[] = [];
+    const slots: { start: string; end: string; available: boolean; conflicted: boolean }[] = [];
     for (let hour = schedule.open; hour < schedule.close; hour += 1) {
       const slotStart = new Date(startOfDay.getTime() + hour * 60 * 60 * 1000);
       const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
       const overlaps = bookings.some((booking) => slotStart < booking.endTime && slotEnd > booking.startTime);
-      const available = !overlaps && slotEnd > now;
-      slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString(), available });
+      const isUpcoming = slotEnd > now;
+      slots.push({
+        start: slotStart.toISOString(),
+        end: slotEnd.toISOString(),
+        available: isUpcoming,
+        conflicted: overlaps,
+      });
     }
 
     const bookedWindows = bookings.map((booking) => ({

@@ -663,15 +663,23 @@ export default function CitasPendientes() {
       <AlertDialog open={cancelDialog !== null} onOpenChange={(open) => !open && setCancelDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar cita</AlertDialogTitle>
+            <AlertDialogTitle>Eliminar cita</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Seguro que quieres cancelar? Esta acción no se puede deshacer.
+              ¿Seguro que quieres eliminar esta cita pendiente? Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCancelDialog(null)}>Atrás</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmCancel}>
-              Cancelar cita
+          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              onClick={() => setCancelDialog(null)}
+              className="border border-white/10 bg-transparent text-gray-200 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 text-white shadow-[0_12px_30px_rgba(220,38,38,0.35)] transition hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+              onClick={handleConfirmCancel}
+            >
+              Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -23,6 +23,7 @@ La última iteración incorpora un flujo integral para confirmar y terminar cita
 - [Flujo de negocio clave: Citas pendientes y asignación por invitación](#flujo-de-negocio-clave-citas-pendientes-y-asignacion-por-invitacion)
 - [Variables de entorno](#variables-de-entorno)
 - [Instalación y arranque (desarrollo)](#instalacion-y-arranque-desarrollo)
+- [Verificación de BD](#verificación-de-bd)
 - [API (referencia rápida)](#api-referencia-rapida)
 - [Ejemplos prácticos (Thunder Client / cURL)](#ejemplos-practicos-thunder-client--curl)
 - [Estándares de UI del Dashboard](#estandares-de-ui-del-dashboard)
@@ -198,6 +199,65 @@ npm run prisma:seed
 # Servidor API (http://localhost:3000)
 npm run dev
 ```
+
+## Verificación de BD
+
+### Validación rápida
+
+```bash
+npm run db:verify
+```
+
+### Validación profunda + cascadas
+
+```bash
+npm run db:audit
+```
+
+### Seed dry-run (transacción + rollback)
+
+```bash
+npm run db:seed:dry
+```
+
+### Aplicar seed real
+
+```bash
+npm run db:seed:apply
+```
+
+### Si cambió el schema
+
+```bash
+npx prisma migrate dev --name <cambio>
+npx prisma generate
+```
+
+### Errores típicos y cómo corregirlos
+
+- **BOM en migraciones** → en Windows ejecuta en PowerShell:
+
+  ```powershell
+  Get-ChildItem prisma/migrations -Filter migration.sql -Recurse \
+    | ForEach-Object { (Get-Content $_ -Raw) | Set-Content $_ -Encoding utf8 }
+  ```
+
+- **ENUM `Role` recreado con `DEFAULT` activo** → usa el patrón seguro:
+
+  ```sql
+  ALTER TABLE "User" ALTER COLUMN "role" DROP DEFAULT;
+  CREATE TYPE "Role_new" AS ENUM ('ADMIN', 'EMPLOYEE', 'NUEVO');
+  ALTER TABLE "User"
+    ALTER COLUMN "role" TYPE "Role_new"
+    USING ("role"::text::"Role_new");
+  DROP TYPE "Role";
+  ALTER TYPE "Role_new" RENAME TO "Role";
+  ALTER TABLE "User" ALTER COLUMN "role" SET DEFAULT 'EMPLOYEE';
+  ```
+
+- **Shadow DB inaccesible** → configura `SHADOW_DATABASE_URL` con permisos completos. Usa `npm run db:verify -- --skip-shadow`
+  solo si no hay alternativa y documenta la decisión. El flag exporta `PRISMA_MIGRATION_SKIP_SHADOW_DATABASE=1` únicamente para
+  esa ejecución.
 
 ## 🧹 Limpieza y migraciones confiables (Windows + Neon)
 

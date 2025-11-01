@@ -1,0 +1,65 @@
+name: Database verification
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/db-verify.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/estetica_ci
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/estetica_ci
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/estetica_ci_shadow
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql --host 127.0.0.1 --username postgres --dbname postgres <<'SQL'
+          SELECT 'CREATE DATABASE estetica_ci' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'estetica_ci');
+          \gexec
+          SELECT 'CREATE DATABASE estetica_ci_shadow' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'estetica_ci_shadow');
+          \gexec
+          SQL
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Database verification
+        run: npm run db:verify
+
+      - name: Database audit (deep)
+        run: npm run db:audit

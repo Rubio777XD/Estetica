@@ -12,8 +12,13 @@
     "prisma:seed": "prisma db seed",
     "prisma:baseline": "bash prisma/scripts/generate-baseline.sh",
     "prisma:baseline:ps": "pwsh prisma/scripts/generate-baseline.ps1",
-    "audit:db": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-audit.ts",
-    "smoke:e2e": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/e2e-smoke.ts",
+    "db:verify": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-verify.ts",
+    "db:audit": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-verify.ts --deep",
+    "db:seed:dry": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-seed-validate.ts",
+    "db:seed:apply": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts",
+    "db:smoke": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/e2e-smoke.ts",
+    "audit:db": "npm run db:audit",
+    "smoke:e2e": "npm run db:smoke",
     "prebuild": "prisma generate"
   },
   "prisma": {

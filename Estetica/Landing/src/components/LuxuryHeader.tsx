@@ -47,6 +47,26 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (localStorage.getItem('salon_auth')) {
+      setIsLoggedIn(true);
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'salon_auth') {
+        setIsLoggedIn(Boolean(event.newValue));
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     const bootstrapSession = async () => {
@@ -201,9 +221,24 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
             {isLoggedIn && (
               <button
                 onClick={goDashboard}
-                className="hidden sm:flex items-center justify-center px-4 py-2 text-xs font-medium rounded-full bg-[#EADCC7] text-black hover:opacity-90 transition"
+                className="hidden sm:flex items-center justify-center px-6 py-2 text-sm font-medium transition-all duration-200 ease-out"
+                style={{
+                  border: "1.5px solid #EADCC7",
+                  color: "#EADCC7",
+                  borderRadius: "50px",
+                  background: "transparent",
+                  minHeight: "40px",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#EADCC7";
+                  e.currentTarget.style.color = "#000000";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "#EADCC7";
+                }}
               >
-                Ir al Dashboard
+                DASHBOARD
               </button>
             )}
 
@@ -275,16 +310,30 @@ export function LuxuryHeader({ activeSection, onNavigate }: LuxuryHeaderProps) {
                     e.currentTarget.style.color = "#EADCC7";
                   }}
                 >
-                  PROGRAMAR
+                  CITA
                 </button>
 
                 {isLoggedIn && (
                   <>
                     <button
                       onClick={goDashboard}
-                      className="w-full text-center py-3 mt-3 text-sm font-medium rounded-full bg-[#EADCC7] text-black hover:opacity-90 transition"
+                      className="w-full text-center py-3 mt-3 text-sm font-medium transition-all duration-200 ease-out"
+                      style={{
+                        border: "1.5px solid #EADCC7",
+                        color: "#EADCC7",
+                        borderRadius: "50px",
+                        background: "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#EADCC7";
+                        e.currentTarget.style.color = "#000000";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = "#EADCC7";
+                      }}
                     >
-                      Ir al Dashboard
+                      DASHBOARD
                     </button>
                     <button
                       onClick={handleLogout}

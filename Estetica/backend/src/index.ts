@@ -22,6 +22,7 @@ import {
   startOfToday,
 } from './utils/timezone';
 import { sendAssignmentEmail } from './utils/mailer';
+import emailRoutes from './routes/email';
 
 dotenv.config();
 
@@ -29,16 +30,15 @@ const app = express();
 app.set('trust proxy', 1);
 
 const allowedOrigins = ['http://localhost:3001', 'http://localhost:3003'];
-if (process.env.NODE_ENV !== 'production') {
-  app.use(
-    cors({
-      origin: allowedOrigins,
-      credentials: true,
-    })
-  );
-}
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
 
 app.use(express.json());
+app.use('/api', emailRoutes);
 
 class HttpError extends Error {
   status: number;
@@ -96,16 +96,10 @@ const roundCurrency = (value: number) => Math.round(value * 100) / 100;
 const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
 const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
 
-const PUBLIC_API_URL =
-  process.env.PUBLIC_API_URL ||
-  process.env.PUBLIC_BACKEND_URL ||
-  process.env.PUBLIC_DASHBOARD_URL ||
-  process.env.PUBLIC_LANDING_URL ||
-  'http://localhost:3000';
+const PUBLIC_API_URL = (process.env.PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 const buildAssignmentAcceptUrl = (token: string) => {
-  const base = PUBLIC_API_URL.replace(/\/$/, '');
-  return `${base}/api/assignments/accept?token=${encodeURIComponent(token)}`;
+  return `${PUBLIC_API_URL}/api/assignments/accept?token=${encodeURIComponent(token)}`;
 };
 
 const renderAssignmentMessage = (title: string, description: string) => `<!DOCTYPE html>
@@ -1072,17 +1066,19 @@ protectedRouter.post(
         serviceName: booking.service.name,
         start: booking.startTime,
         end: booking.endTime,
-        notes: booking.notes,
+        notes: booking.notes ?? null,
         acceptUrl,
         expiresAt,
       });
     } catch (error) {
-      console.error('[assignments] error enviando invitación', { bookingId, error });
+      const message = error instanceof Error ? error.message : 'error-desconocido';
+      console.error('[assignments] no fue posible enviar la invitación', { bookingId, message });
       await prisma.assignment.delete({ where: { id: assignment.id } }).catch(() => undefined);
-      throw new HttpError(502, 'No fue posible enviar la invitación');
+      throw new HttpError(500, 'No fue posible enviar el correo');
     }
 
     broadcastEvent('booking:assignment:sent', { bookingId, assignmentId: assignment.id }, 'auth');
+    broadcastEvent('booking:updated', { id: booking.id }, 'auth');
 
     return sendSuccess(res, { assignment }, 'Invitación enviada', 201);
   })

@@ -17,6 +17,7 @@ Plataforma pensada para equipos de estética que necesitan captar clientes desde
 - [CORS, cookies y seguridad](#cors-cookies-y-seguridad)
 - [Despliegue (producción)](#despliegue-produccion)
 - [Troubleshooting](#troubleshooting)
+- [Auditoría y Pruebas](#auditoria-y-pruebas)
 - [Pruebas manuales recomendadas](#pruebas-manuales-recomendadas)
 - [Contribución y scripts útiles](#contribucion-y-scripts-utiles)
 - [Roadmap y estado](#roadmap-y-estado)
@@ -347,12 +348,29 @@ curl "http://localhost:3000/api/assignments/accept?token=<token>"
 - **Correos no llegan:** sin SMTP/Resend configurado se registran en consola. Proporciona credenciales válidas o usa Resend.
 - **Puertos ocupados:** cambia puerto con `npm run dev -- --port XXXX` o libera procesos (`lsof -i :3000`).
 
+## Auditoría y Pruebas
+
+### Comandos rápidos
+
+```bash
+cd backend
+npx prisma migrate status
+npm run audit:db
+npm run smoke:e2e
+```
+
+- `npx prisma migrate status`: confirma que todas las migraciones Prisma estén aplicadas en la base actual.
+- `npm run audit:db`: ejecuta `scripts/db-audit.ts`, que valida la presencia de tablas críticas, nullable/ defaults esperados (`Service.description`, `Booking.amountOverride`, `User.role`), índices en `Assignment`, `Booking` y `Commission`, y reglas `ON DELETE CASCADE`. El script crea una cita temporal para comprobar cascadas reales; si falla, ajusta el esquema (`schema.prisma`) y genera una migración.
+- `npm run smoke:e2e`: corre `scripts/e2e-smoke.ts`. Inicia sesión (usa `SMOKE_ADMIN_EMAIL/SMOKE_ADMIN_PASSWORD` si los defines), crea o reutiliza un servicio, genera una cita pendiente, envía invitación y la acepta, aplica override de precio, completa la cita (pago + comisión), consulta el reporte y valida la exportación CSV. Errores aquí implican revisar endpoints/validaciones.
+
+Cuando agregues campos nuevos, ejecuta `npx prisma migrate dev --name <fix>` para generar la migración; en producción aplica con `npm run prisma:migrate`.
+
 ## Pruebas manuales recomendadas
-1. **Flujo E2E:** crea cita → verifica en Citas → envía invitación → acepta token → confirma que `assignedEmail` aparece y métricas se actualizan.
-2. **Expiración forzada:** modifica `ASSIGNMENT_EXPIRATION_HOURS` a 1 y reinicia backend para comprobar badge "vence" y expiración automática.
-3. **Inventario:** CRUD completo y verificación de ancho completo en la tabla.
-4. **Pagos:** registra pago y valida actualización de totales + gráfica.
-5. **Sesión:** fuerza un 401 (borrar cookie) y confirma redirección automática a la Landing.
+1. **Landing → Dashboard:** desde la Landing crea una cita nueva; debe verse en el Dashboard en **Citas pendientes** (SSE o refetch manual).
+2. **Asignación y próximas:** envía invitación desde la tarjeta pendiente y acepta el enlace; la cita pasa a **Citas próximas** con `assignedEmail` visible.
+3. **Cobro completo:** en próximas aplica override (p. ej. 300) y completa la cita con pago `cash` y comisión 50 %. La cita debe moverse a **Terminadas**, generar `Payment` y `Commission` y actualizar totales.
+4. **Reporte Pagos & Comisiones:** abre la sección correspondiente, filtra por rango del día y confirma totales + fila de la cita; prueba el botón **Exportar CSV** y ábrelo en Excel.
+5. **Landing pública:** valida que `/api/public/services` muestre descripciones y que la Landing refleje los cambios de servicios.
 
 ## Contribución y scripts útiles
 - Backend:

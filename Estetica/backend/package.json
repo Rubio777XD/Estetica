@@ -11,7 +11,9 @@
     "prisma:reset": "prisma migrate reset --skip-seed --force",
     "prisma:seed": "prisma db seed",
     "prisma:baseline": "bash prisma/scripts/generate-baseline.sh",
-    "prisma:baseline:ps": "pwsh prisma/scripts/generate-baseline.ps1"
+    "prisma:baseline:ps": "pwsh prisma/scripts/generate-baseline.ps1",
+    "audit:db": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-audit.ts",
+    "smoke:e2e": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/e2e-smoke.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

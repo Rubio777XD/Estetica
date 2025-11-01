@@ -14,6 +14,7 @@
     "prisma:baseline:ps": "pwsh prisma/scripts/generate-baseline.ps1",
     "db:verify": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-verify.ts",
     "db:audit": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-verify.ts --deep",
+    "db:reset-safe": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-reset-safe.ts",
     "db:seed:dry": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/db-seed-validate.ts",
     "db:seed:apply": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts",
     "db:smoke": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/e2e-smoke.ts",

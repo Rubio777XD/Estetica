@@ -7,11 +7,23 @@ import { Card, CardContent } from "../ui/card";
 import { CheckCircle, Clock, User, Phone, Mail, Calendar as CalendarIcon } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { usePublicServices } from "../../lib/services-store";
-import { formatLocalDateTime, getLocalDateTimeInputValue, localDateTimeToIso } from "../../lib/datetime";
+import { formatLocalDateTime, getLocalDateTimeInputValue, isoToLocalInputValue, localDateTimeToIso } from "../../lib/datetime";
 
 interface BookingSectionProps {
   preSelectedService?: string;
 }
+
+type AvailabilitySlot = {
+  start: string;
+  end: string;
+  available: boolean;
+};
+
+const slotTimeFormatter = new Intl.DateTimeFormat("es-MX", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/Tijuana",
+});
 
 export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const {
@@ -24,6 +36,11 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedService, setSelectedService] = useState(preSelectedService || '');
   const [dateTimeValue, setDateTimeValue] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
+  const [slotsStatus, setSlotsStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
+  const [slotsError, setSlotsError] = useState<string | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -34,6 +51,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     email: '',
   });
   const [minDateTimeValue] = useState(() => getLocalDateTimeInputValue());
+  const minDateValue = minDateTimeValue ? minDateTimeValue.slice(0, 10) : '';
 
   const progress = ((currentStep - 1) / 2) * 100;
 
@@ -57,6 +75,11 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       setSelectedService('');
       setCurrentStep(1);
       setDateTimeValue('');
+      setSelectedDate('');
+      setSelectedSlot('');
+      setAvailableSlots([]);
+      setSlotsStatus('idle');
+      setSlotsError(null);
       setNotes('');
       setSubmitError(null);
     }
@@ -69,11 +92,63 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     if (services.some((service) => service.id === preSelectedService)) {
       setSelectedService(preSelectedService);
       setDateTimeValue('');
+      setSelectedDate('');
+      setSelectedSlot('');
+      setAvailableSlots([]);
+      setSlotsStatus('idle');
+      setSlotsError(null);
       setNotes('');
       setSubmitError(null);
       setCurrentStep(2);
     }
   }, [preSelectedService, services]);
+
+  useEffect(() => {
+    if ((currentStep === 2 || currentStep === 3) && !selectedDate) {
+      const fallback = getLocalDateTimeInputValue().slice(0, 10);
+      setSelectedDate(minDateValue || fallback);
+    }
+  }, [currentStep, selectedDate, minDateValue]);
+
+  useEffect(() => {
+    if (!selectedDate) {
+      setAvailableSlots([]);
+      setSlotsStatus('idle');
+      setSlotsError(null);
+      setSelectedSlot('');
+      setDateTimeValue('');
+      return;
+    }
+
+    let cancelled = false;
+    setSlotsStatus('loading');
+    setSlotsError(null);
+    setSelectedSlot('');
+    setDateTimeValue('');
+
+    void apiFetch<{ slots?: AvailabilitySlot[]; message?: string }>(
+      `/api/public/bookings/availability?date=${selectedDate}`
+    )
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setAvailableSlots(response.slots ?? []);
+        setSlotsStatus('success');
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : 'No fue posible cargar la disponibilidad.';
+        setSlotsError(message);
+        setSlotsStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate]);
 
   const handleServiceSelect = (serviceId: string) => {
     if (!services.some((service) => service.id === serviceId)) {
@@ -81,14 +156,19 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     }
     setSelectedService(serviceId);
     setDateTimeValue('');
+    setSelectedDate('');
+    setSelectedSlot('');
+    setAvailableSlots([]);
+    setSlotsStatus('idle');
+    setSlotsError(null);
     setNotes('');
     setSubmitError(null);
     setCurrentStep(2);
   };
 
   const handleDateTimeSelect = () => {
-    if (!dateTimeValue) {
-      setSubmitError('Selecciona una fecha y hora válidas.');
+    if (!dateTimeValue || !selectedSlot) {
+      setSubmitError('Selecciona un horario disponible.');
       return;
     }
 
@@ -99,6 +179,17 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
 
     setSubmitError(null);
     setCurrentStep(3);
+  };
+
+  const handleSlotSelect = (slotStart: string) => {
+    const inputValue = isoToLocalInputValue(slotStart);
+    if (!inputValue) {
+      setSubmitError('No fue posible interpretar el horario seleccionado.');
+      return;
+    }
+    setSelectedSlot(slotStart);
+    setDateTimeValue(inputValue);
+    setSubmitError(null);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -137,6 +228,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
         method: 'POST',
         body: JSON.stringify({
           clientName: formData.name.trim(),
+          clientEmail: formData.email.trim() || undefined,
           serviceId: selectedService,
           startTime: startIso,
           notes: extraNotes.join(' | '),
@@ -166,9 +258,9 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const formattedDateTime = dateTimeValue ? formatLocalDateTime(dateTimeValue) : '';
 
   const generateCalendarFile = () => {
-    if (!selectedServiceData || !dateTimeValue) return;
+    if (!selectedServiceData || (!dateTimeValue && !selectedSlot)) return;
 
-    const startIso = localDateTimeToIso(dateTimeValue);
+    const startIso = selectedSlot || localDateTimeToIso(dateTimeValue);
     if (!startIso) return;
 
     const startDate = new Date(startIso);
@@ -427,22 +519,67 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
               </div>
               <div className="p-8 pt-0">
                 <div className="space-y-6">
-                  <div className="space-y-3">
-                    <Label htmlFor="booking-datetime" className="text-high-contrast font-body">
-                      Selecciona la fecha y hora
-                    </Label>
-                    <Input
-                      id="booking-datetime"
-                      type="datetime-local"
-                      value={dateTimeValue}
-                      min={minDateTimeValue || undefined}
-                      step={900}
-                      onChange={(event) => setDateTimeValue(event.target.value)}
-                      className="h-12 rounded-xl"
-                    />
-                    <p className="text-xs text-medium-contrast">
-                      Zona horaria: America/Tijuana. Te recomendamos seleccionar la hora disponible más cercana.
-                    </p>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-3">
+                      <Label htmlFor="booking-date" className="text-high-contrast font-body">
+                        Selecciona la fecha
+                      </Label>
+                      <Input
+                        id="booking-date"
+                        type="date"
+                        value={selectedDate}
+                        min={minDateValue || undefined}
+                        onChange={(event) => {
+                          setSelectedDate(event.target.value);
+                          setSubmitError(null);
+                        }}
+                        className="h-12 rounded-xl"
+                      />
+                      <p className="text-xs text-medium-contrast">
+                        Horario local: America/Tijuana. Selecciona el día que prefieras.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm text-medium-contrast">Horarios disponibles</p>
+                      {slotsStatus === 'loading' ? (
+                        <p className="text-sm text-medium-contrast">Cargando horarios…</p>
+                      ) : slotsStatus === 'error' ? (
+                        <div className="text-sm text-red-400">
+                          {slotsError ?? 'No fue posible cargar la disponibilidad.'}
+                        </div>
+                      ) : slotsStatus === 'success' ? (
+                        availableSlots.length === 0 ? (
+                          <p className="text-sm text-medium-contrast">
+                            No hay horarios disponibles para esta fecha. Prueba con otro día.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {availableSlots.map((slot) => {
+                              const isSelected = selectedSlot === slot.start;
+                              return (
+                                <button
+                                  key={slot.start}
+                                  type="button"
+                                  onClick={() => handleSlotSelect(slot.start)}
+                                  disabled={!slot.available}
+                                  className={`rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                                    isSelected
+                                      ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
+                                      : slot.available
+                                      ? 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
+                                      : 'cursor-not-allowed border-gray-300 bg-transparent text-gray-400 line-through'
+                                  }`}
+                                >
+                                  {slotTimeFormatter.format(new Date(slot.start))}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )
+                      ) : (
+                        <p className="text-sm text-medium-contrast">Elige una fecha para consultar los horarios.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -456,7 +593,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                   </button>
                   <button
                     onClick={handleDateTimeSelect}
-                    disabled={!dateTimeValue}
+                    disabled={!selectedSlot}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     type="button"
                   >

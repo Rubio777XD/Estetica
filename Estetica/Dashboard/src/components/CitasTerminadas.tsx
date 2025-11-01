@@ -129,6 +129,16 @@ export default function CitasTerminadas() {
                     <p className="text-sm text-gray-700">{booking.service.duration} minutos</p>
                   </div>
                 </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase text-gray-500">Realizado por</p>
+                    <p className="text-sm text-gray-700">{booking.completedBy ?? '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase text-gray-500">Correo del cliente</p>
+                    <p className="text-sm text-gray-700">{booking.clientEmail ?? '—'}</p>
+                  </div>
+                </div>
                 {booking.notes ? (
                   <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
                     <p className="font-medium text-gray-800 mb-1">Notas</p>

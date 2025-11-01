@@ -17,6 +17,7 @@ export interface Service {
 export interface Booking {
   id: string;
   clientName: string;
+  clientEmail?: string | null;
   serviceId: string;
   startTime: string;
   endTime: string;
@@ -25,6 +26,9 @@ export interface Booking {
   assignedEmail?: string | null;
   assignedAt?: string | null;
   amountOverride?: number | null;
+  invitedEmails?: string[];
+  confirmedEmail?: string | null;
+  completedBy?: string | null;
   createdAt: string;
   updatedAt: string;
   service: Service;

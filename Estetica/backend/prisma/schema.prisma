@@ -62,6 +62,7 @@ model Service {
 model Booking {
   id         String        @id @default(cuid())
   clientName String
+  clientEmail String?
   serviceId  String
   startTime  DateTime
   endTime    DateTime
@@ -70,6 +71,9 @@ model Booking {
   assignedEmail String?
   assignedAt    DateTime?
   amountOverride Float?
+  invitedEmails String[] @default([])
+  confirmedEmail String?
+  completedBy   String?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 

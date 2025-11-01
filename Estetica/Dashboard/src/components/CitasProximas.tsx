@@ -12,7 +12,16 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -55,6 +64,7 @@ type PaymentDialogState = {
   amount: string;
   commissionPercentage: string;
   method: PaymentMethod;
+  completedBy: string;
 };
 
 const computeCommissionAmount = (amount: number, percentage: number) =>
@@ -185,6 +195,7 @@ export default function CitasProximas() {
       amount: baseAmount.toFixed(2),
       commissionPercentage: lastCommissionPct.toString(),
       method: 'cash',
+      completedBy: booking.completedBy ?? '',
     });
   };
 
@@ -193,6 +204,7 @@ export default function CitasProximas() {
     const { booking, method } = paymentDialog;
     const amount = Number(paymentDialog.amount);
     const commissionPercentage = Number(paymentDialog.commissionPercentage);
+    const completedByName = paymentDialog.completedBy.trim();
 
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Ingresa un monto válido mayor a 0');
@@ -204,6 +216,11 @@ export default function CitasProximas() {
       return;
     }
 
+    if (completedByName.length === 0) {
+      toast.error('Ingresa el nombre de quien realizó el servicio');
+      return;
+    }
+
     setCompleting((prev) => ({ ...prev, [booking.id]: true }));
     try {
       await apiFetch(`/api/bookings/${booking.id}/complete`, {
@@ -212,6 +229,7 @@ export default function CitasProximas() {
           amount,
           method,
           commissionPercentage,
+          completedBy: completedByName,
         }),
       });
       toast.success('Cita marcada como realizada');
@@ -517,6 +535,20 @@ export default function CitasProximas() {
                 </Select>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="completed-by">Servicio realizado por</Label>
+                <Input
+                  id="completed-by"
+                  value={paymentDialog.completedBy}
+                  onChange={(event) =>
+                    setPaymentDialog((prev) =>
+                      prev ? { ...prev, completedBy: event.target.value } : prev
+                    )
+                  }
+                  placeholder="Nombre de la colaboradora"
+                />
+              </div>
+
               {(() => {
                 const amountValue = Number(paymentDialog.amount);
                 const commissionPct = Number(paymentDialog.commissionPercentage);
@@ -547,12 +579,15 @@ export default function CitasProximas() {
       <AlertDialog open={cancelDialog !== null} onOpenChange={(open) => !open && setCancelDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Seguro que quieres cancelar? Esta acción no se puede deshacer.</AlertDialogTitle>
+            <AlertDialogTitle>Cancelar cita</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Seguro que quieres cancelar? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCancelDialog(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setCancelDialog(null)}>Atrás</AlertDialogCancel>
             <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmCancel}>
-              Confirmar
+              Cancelar cita
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

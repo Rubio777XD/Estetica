@@ -1,39 +1,24 @@
 import { API_BASE_URL } from '../lib/api';
 
-type TestEmailResponse = {
-  success: true;
-  message: string;
-  data: {
-    delivered: boolean;
-    to: string;
-    transport: unknown;
-  };
-};
-
-export const sendTestEmail = async (): Promise<TestEmailResponse> => {
+export const sendTestEmail = async (): Promise<string> => {
   const response = await fetch(`${API_BASE_URL}/api/test-email`, {
-    method: 'POST',
+    method: 'GET',
     headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+      Accept: 'text/plain',
     },
     credentials: 'include',
   });
 
-  let payload: unknown;
+  let message: string;
   try {
-    payload = await response.json();
+    message = await response.text();
   } catch (error) {
-    // ignore parse errors, handled below
+    message = '';
   }
 
-  if (!response.ok || !payload || typeof payload !== 'object') {
-    const errorMessage =
-      payload && typeof payload === 'object' && 'error' in payload
-        ? String((payload as { error?: unknown }).error ?? 'No fue posible enviar el correo de prueba')
-        : 'No fue posible enviar el correo de prueba';
-    throw new Error(errorMessage);
+  if (!response.ok) {
+    throw new Error(message || 'No fue posible enviar el correo de prueba');
   }
 
-  return payload as TestEmailResponse;
+  return message || '✅ Correo enviado correctamente.';
 };

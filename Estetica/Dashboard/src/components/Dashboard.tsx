@@ -23,6 +23,7 @@ const STATUS_LABELS = {
 
 export default function Dashboard() {
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const showTestEmailButton = import.meta.env.MODE !== 'production';
   const {
     data: overview,
     status: overviewStatus,
@@ -71,8 +72,8 @@ export default function Dashboard() {
     if (sendingTestEmail) return;
     setSendingTestEmail(true);
     try {
-      const response = await sendTestEmail();
-      toast.success(response?.message ?? 'Correo de prueba enviado');
+      await sendTestEmail();
+      toast.success('Correo enviado (test) ✅');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No fue posible enviar el correo de prueba';
       toast.error(message);
@@ -84,14 +85,16 @@ export default function Dashboard() {
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex flex-col justify-end gap-3 sm:flex-row sm:items-center">
-        <Button
-          onClick={handleSendTestEmail}
-          disabled={sendingTestEmail}
-          className="gap-2 rounded-full bg-black text-white shadow-sm transition hover:bg-black/90 focus-visible:ring-white/40 sm:w-auto"
-        >
-          <MailPlus className="h-4 w-4" />
-          {sendingTestEmail ? 'Enviando correo…' : 'Enviar correo de prueba'}
-        </Button>
+        {showTestEmailButton && (
+          <Button
+            onClick={handleSendTestEmail}
+            disabled={sendingTestEmail}
+            className="gap-2 rounded-full bg-black text-white shadow-sm transition hover:bg-black/90 focus-visible:ring-white/40 sm:w-auto"
+          >
+            <MailPlus className="h-4 w-4" />
+            {sendingTestEmail ? 'Enviando correo…' : 'Enviar correo de prueba'}
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

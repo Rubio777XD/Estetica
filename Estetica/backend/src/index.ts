@@ -21,7 +21,8 @@ import {
   startOfMonth,
   startOfToday,
 } from './utils/timezone';
-import { sendAssignmentEmail, sendMail } from './utils/mailer';
+import { sendAssignmentEmail } from './utils/mailer';
+import emailRoutes from './routes/email';
 
 dotenv.config();
 
@@ -29,16 +30,15 @@ const app = express();
 app.set('trust proxy', 1);
 
 const allowedOrigins = ['http://localhost:3001', 'http://localhost:3003'];
-if (process.env.NODE_ENV !== 'production') {
-  app.use(
-    cors({
-      origin: allowedOrigins,
-      credentials: true,
-    })
-  );
-}
+app.use(
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+  })
+);
 
 app.use(express.json());
+app.use('/api', emailRoutes);
 
 class HttpError extends Error {
   status: number;
@@ -93,25 +93,13 @@ const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [BookingStatus.scheduled, Booki
 
 const roundCurrency = (value: number) => Math.round(value * 100) / 100;
 
-const testEmailDateFormatter = new Intl.DateTimeFormat('es-MX', {
-  timeZone: DEFAULT_TZ,
-  dateStyle: 'full',
-  timeStyle: 'medium',
-});
-
 const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
 const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
 
-const PUBLIC_API_URL =
-  process.env.PUBLIC_API_URL ||
-  process.env.PUBLIC_BACKEND_URL ||
-  process.env.PUBLIC_DASHBOARD_URL ||
-  process.env.PUBLIC_LANDING_URL ||
-  'http://localhost:3000';
+const PUBLIC_API_URL = (process.env.PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 const buildAssignmentAcceptUrl = (token: string) => {
-  const base = PUBLIC_API_URL.replace(/\/$/, '');
-  return `${base}/api/assignments/accept?token=${encodeURIComponent(token)}`;
+  return `${PUBLIC_API_URL}/api/assignments/accept?token=${encodeURIComponent(token)}`;
 };
 
 const renderAssignmentMessage = (title: string, description: string) => `<!DOCTYPE html>
@@ -186,10 +174,6 @@ const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_ATTEMPTS = 5;
 type LoginAttempt = { count: number; expiresAt: number };
 const loginAttempts = new Map<string, LoginAttempt>();
-
-const testEmailSchema = z.object({
-  to: z.string().email().optional(),
-});
 
 const loginRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   const key = req.ip || req.socket.remoteAddress || 'unknown';
@@ -266,44 +250,6 @@ app.get('/api/health', (_req, res) => {
     'API operativa'
   );
 });
-
-app.post(
-  '/api/test-email',
-  authJWT,
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const payload = testEmailSchema.safeParse(req.body ?? {});
-    if (!payload.success) {
-      throw new HttpError(400, 'Parámetros inválidos', payload.error.flatten());
-    }
-
-    const to = payload.data.to ?? process.env.SMTP_USER ?? process.env.MAIL_FROM ?? '';
-    if (!to) {
-      throw new HttpError(400, 'No hay un destinatario configurado para la prueba de correo');
-    }
-
-    const subject = 'Correo de prueba - Estética Dashboard';
-    const formattedDate = testEmailDateFormatter.format(new Date());
-    const previewText = `Este es un correo de prueba enviado desde el dashboard el ${formattedDate}.`;
-
-    try {
-      const result = await sendMail({
-        to,
-        subject,
-        text: `${previewText}\n\nSi no solicitaste esta prueba, puedes ignorar este mensaje.`,
-        html: `
-          <p>Hola,</p>
-          <p>${previewText}</p>
-          <p>Si no solicitaste esta prueba, puedes ignorar este mensaje.</p>
-        `.trim(),
-      });
-
-      return sendSuccess(res, { delivered: true, to, transport: result ?? null }, 'Correo de prueba enviado');
-    } catch (error) {
-      console.error('[mailer] Error enviando correo de prueba', error);
-      throw new HttpError(500, 'No fue posible enviar el correo de prueba');
-    }
-  })
-);
 
 app.get(
   '/api/assignments/accept',
@@ -1120,17 +1066,19 @@ protectedRouter.post(
         serviceName: booking.service.name,
         start: booking.startTime,
         end: booking.endTime,
-        notes: booking.notes,
+        notes: booking.notes ?? null,
         acceptUrl,
         expiresAt,
       });
     } catch (error) {
-      console.error('[assignments] error enviando invitación', { bookingId, error });
+      const message = error instanceof Error ? error.message : 'error-desconocido';
+      console.error('[assignments] no fue posible enviar la invitación', { bookingId, message });
       await prisma.assignment.delete({ where: { id: assignment.id } }).catch(() => undefined);
-      throw new HttpError(502, 'No fue posible enviar la invitación');
+      throw new HttpError(500, 'No fue posible enviar el correo');
     }
 
     broadcastEvent('booking:assignment:sent', { bookingId, assignmentId: assignment.id }, 'auth');
+    broadcastEvent('booking:updated', { id: booking.id }, 'auth');
 
     return sendSuccess(res, { assignment }, 'Invitación enviada', 201);
   })

@@ -89,6 +89,10 @@ const normalizeNotes = (notes?: string | null) => {
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [BookingStatus.scheduled, BookingStatus.confirmed];
+
+const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+
 const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
 const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
 
@@ -600,6 +604,10 @@ const bookingUpdateSchema = bookingCreateSchema.extend({
   }).optional(),
 });
 
+const bookingPriceOverrideSchema = z.object({
+  amount: z.union([z.coerce.number().positive(), z.literal(null)]),
+});
+
 const bookingStatusSchema = z.object({
   status: z.nativeEnum(BookingStatus, {
     invalid_type_error: 'Estado inválido',
@@ -622,6 +630,30 @@ const bookingQuerySchema = z.object({
     .optional(),
   status: z.nativeEnum(BookingStatus).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+const bookingCompleteSchema = z.object({
+  amount: z.coerce.number().positive().optional(),
+  method: z.nativeEnum(PaymentMethod),
+  commissionPercentage: z.coerce.number().min(0).max(100),
+});
+
+const commissionCreateSchema = z.object({
+  bookingId: z.string().cuid(),
+  percentage: z.coerce.number().min(0).max(100),
+  amount: z.coerce.number().min(0),
+  assigneeEmail: z.string().email().optional().nullable(),
+});
+
+const commissionQuerySchema = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 protectedRouter.get(
@@ -668,7 +700,10 @@ protectedRouter.get(
     await expireStaleAssignments();
 
     const bookings = await prisma.booking.findMany({
-      where: { assignedEmail: null },
+      where: {
+        assignedEmail: null,
+        status: { in: ACTIVE_BOOKING_STATUSES },
+      },
       orderBy: { startTime: 'asc' },
       include: {
         service: true,
@@ -681,6 +716,25 @@ protectedRouter.get(
     });
 
     return sendSuccess(res, { bookings }, 'Citas sin asignar');
+  })
+);
+
+protectedRouter.get(
+  '/bookings/upcoming',
+  asyncHandler(async (_req, res) => {
+    await expireStaleAssignments();
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        assignedEmail: { not: null },
+        status: { in: ACTIVE_BOOKING_STATUSES },
+      },
+      orderBy: { startTime: 'asc' },
+      include: { service: true, payments: true },
+      take: 200,
+    });
+
+    return sendSuccess(res, { bookings }, 'Citas próximas');
   })
 );
 
@@ -822,6 +876,36 @@ protectedRouter.put(
 );
 
 protectedRouter.patch(
+  '/bookings/:id/price',
+  asyncHandler(async (req, res) => {
+    const parsed = bookingPriceOverrideSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Monto inválido', parsed.error.flatten());
+    }
+
+    const existing = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new HttpError(404, 'Cita no encontrada');
+    }
+
+    const amount = parsed.data.amount;
+
+    const booking = await prisma.booking.update({
+      where: { id: req.params.id },
+      data: { amountOverride: amount ?? null },
+      include: { service: true, payments: true },
+    });
+
+    broadcastEvent('booking:updated', { id: booking.id }, 'auth');
+    return sendSuccess(res, { booking }, amount === null ? 'Precio restablecido' : 'Precio actualizado');
+  })
+);
+
+protectedRouter.patch(
   '/bookings/:id/status',
   asyncHandler(async (req, res) => {
     const result = bookingStatusSchema.safeParse(req.body);
@@ -857,6 +941,78 @@ protectedRouter.delete(
     broadcastEvent('booking:deleted', { id: req.params.id }, 'auth');
     broadcastEvent('stats:invalidate', { reason: 'booking-change' }, 'auth');
     return sendSuccess(res, { deleted: true }, 'Cita eliminada');
+  })
+);
+
+protectedRouter.post(
+  '/bookings/:id/complete',
+  asyncHandler(async (req, res) => {
+    const parsed = bookingCompleteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
+    }
+
+    const { amount, method, commissionPercentage } = parsed.data;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findUnique({
+        where: { id: req.params.id },
+        include: { service: true },
+      });
+
+      if (!booking) {
+        throw new HttpError(404, 'Cita no encontrada');
+      }
+
+      if (booking.status === BookingStatus.canceled) {
+        throw new HttpError(409, 'No se puede completar una cita cancelada');
+      }
+
+      if (booking.status === BookingStatus.done) {
+        throw new HttpError(409, 'La cita ya fue completada');
+      }
+
+      const baseAmount = amount ?? booking.amountOverride ?? booking.service.price;
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        throw new HttpError(400, 'El monto final de la cita es inválido');
+      }
+
+      const finalAmount = roundCurrency(baseAmount);
+      const commissionAmount = roundCurrency((finalAmount * commissionPercentage) / 100);
+
+      const payment = await tx.payment.create({
+        data: {
+          bookingId: booking.id,
+          amount: finalAmount,
+          method,
+        },
+      });
+
+      const commission = await tx.commission.create({
+        data: {
+          bookingId: booking.id,
+          percentage: commissionPercentage,
+          amount: commissionAmount,
+          assigneeEmail: booking.assignedEmail ?? null,
+        },
+      });
+
+      const updatedBooking = await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: BookingStatus.done },
+        include: { service: true, payments: true, commissions: true },
+      });
+
+      return { booking: updatedBooking, payment, commission };
+    });
+
+    broadcastEvent('payment:created', { id: result.payment.id }, 'auth');
+    broadcastEvent('payments:invalidate', { id: result.payment.id }, 'auth');
+    broadcastEvent('commission:created', { id: result.commission.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'booking-completed' }, 'auth');
+    broadcastEvent('booking:status', { id: result.booking.id, status: result.booking.status }, 'auth');
+
+    return sendSuccess(res, result, 'Cita completada');
   })
 );
 
@@ -1034,6 +1190,191 @@ protectedRouter.post(
     broadcastEvent('payments:invalidate', { id: payment.id }, 'auth');
     broadcastEvent('stats:invalidate', { reason: 'payment-change' }, 'auth');
     return sendSuccess(res, { payment }, 'Pago registrado', 201);
+  })
+);
+
+type CommissionRow = {
+  bookingId: string;
+  clientName: string;
+  serviceName: string;
+  startTime: string;
+  assignedEmail: string | null | undefined;
+  paymentMethod: PaymentMethod | null;
+  paymentCreatedAt: Date | null;
+  amount: number;
+  commissionAmount: number;
+  commissionPercentage: number;
+};
+
+const mapBookingsToCommissionRows = (
+  bookings: Array<Prisma.BookingGetPayload<{ include: { service: true; payments: true; commissions: true } }>>
+): CommissionRow[] => {
+  return bookings.map((booking) => {
+    const latestPayment = booking.payments.reduce<typeof booking.payments[number] | null>((latest, current) => {
+      if (!latest) return current;
+      return new Date(current.createdAt).getTime() > new Date(latest.createdAt).getTime() ? current : latest;
+    }, null);
+
+    const latestCommission = booking.commissions.reduce<typeof booking.commissions[number] | null>((latest, current) => {
+      if (!latest) return current;
+      return new Date(current.createdAt).getTime() > new Date(latest.createdAt).getTime() ? current : latest;
+    }, null);
+
+    const amount = latestPayment?.amount ?? booking.amountOverride ?? booking.service.price;
+    const commissionAmount = latestCommission?.amount ?? 0;
+    const percentage = latestCommission?.percentage ?? 0;
+
+    return {
+      bookingId: booking.id,
+      clientName: booking.clientName,
+      serviceName: booking.service.name,
+      startTime: booking.startTime.toISOString(),
+      assignedEmail: booking.assignedEmail,
+      paymentMethod: latestPayment?.method ?? null,
+      paymentCreatedAt: latestPayment?.createdAt ?? null,
+      amount: roundCurrency(amount ?? 0),
+      commissionAmount: roundCurrency(commissionAmount),
+      commissionPercentage: percentage,
+    } satisfies CommissionRow;
+  });
+};
+
+protectedRouter.post(
+  '/commissions',
+  asyncHandler(async (req, res) => {
+    const parsed = commissionCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
+    }
+
+    const { bookingId, percentage, amount, assigneeEmail } = parsed.data;
+    const normalizedEmail = assigneeEmail ? normalizeEmail(assigneeEmail) : null;
+
+    const commission = await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!booking) {
+        throw new HttpError(404, 'Cita no encontrada');
+      }
+
+      return tx.commission.create({
+        data: {
+          bookingId,
+          percentage,
+          amount: roundCurrency(amount),
+          assigneeEmail: normalizedEmail,
+        },
+      });
+    });
+
+    broadcastEvent('commission:created', { id: commission.id }, 'auth');
+    broadcastEvent('stats:invalidate', { reason: 'commission-change' }, 'auth');
+    return sendSuccess(res, { commission }, 'Comisión registrada', 201);
+  })
+);
+
+protectedRouter.get(
+  '/commissions',
+  asyncHandler(async (req, res) => {
+    const parsed = commissionQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
+    }
+
+    const { from, to } = parsed.data;
+    const where: Prisma.BookingWhereInput = {
+      status: BookingStatus.done,
+    };
+
+    if (from || to) {
+      where.startTime = {};
+      if (from) {
+        where.startTime.gte = parseDateOnly(from);
+      }
+      if (to) {
+        where.startTime.lte = parseDateOnly(to, { endOfDay: true });
+      }
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      orderBy: { startTime: 'desc' },
+      include: { service: true, payments: true, commissions: true },
+      take: 500,
+    });
+
+    const rows = mapBookingsToCommissionRows(bookings);
+    const totalAmount = rows.reduce((sum, item) => sum + item.amount, 0);
+    const totalCommission = rows.reduce((sum, item) => sum + item.commissionAmount, 0);
+
+    return sendSuccess(
+      res,
+      { rows, totalAmount: roundCurrency(totalAmount), totalCommission: roundCurrency(totalCommission) },
+      'Pagos y comisiones'
+    );
+  })
+);
+
+protectedRouter.get(
+  '/commissions/export',
+  asyncHandler(async (req, res) => {
+    const parsed = commissionQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
+    }
+
+    const { from, to } = parsed.data;
+    const where: Prisma.BookingWhereInput = {
+      status: BookingStatus.done,
+    };
+
+    if (from || to) {
+      where.startTime = {};
+      if (from) {
+        where.startTime.gte = parseDateOnly(from);
+      }
+      if (to) {
+        where.startTime.lte = parseDateOnly(to, { endOfDay: true });
+      }
+    }
+
+    const bookings = await prisma.booking.findMany({
+      where,
+      orderBy: { startTime: 'desc' },
+      include: { service: true, payments: true, commissions: true },
+    });
+
+    const rows = mapBookingsToCommissionRows(bookings);
+    const headers = ['Fecha', 'Cliente', 'Servicio', 'Total cita', 'Comisión', 'Método', 'Colaboradora'];
+    const csvLines = [headers.join(',')];
+
+    const escape = (value: string | number | null | undefined) => {
+      if (value === null || typeof value === 'undefined') return '';
+      const stringValue = typeof value === 'number' ? value.toString() : value;
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    for (const row of rows) {
+      const values = [
+        escape(new Date(row.startTime).toISOString()),
+        escape(row.clientName),
+        escape(row.serviceName),
+        escape(row.amount.toFixed(2)),
+        escape(row.commissionAmount.toFixed(2)),
+        escape(row.paymentMethod ?? ''),
+        escape(row.assignedEmail ?? ''),
+      ];
+      csvLines.push(values.join(','));
+    }
+
+    const csvContent = csvLines.join('\n');
+    const filename = `pagos_comisiones_${from ?? 'inicio'}_${to ?? 'hoy'}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csvContent);
   })
 );
 

@@ -186,11 +186,17 @@ function AppShell() {
         invalidateQueriesMatching('bookings:');
       };
 
-      const handlePaymentChange = () => {
-        invalidateQueriesMatching('payments:');
-        invalidateQuery('bookings:for-payments');
-        handleStats();
-      };
+    const handlePaymentChange = () => {
+      invalidateQueriesMatching('payments:');
+      invalidateQuery('bookings:for-payments');
+      invalidateQueriesMatching('commissions:');
+      handleStats();
+    };
+
+    const handleCommissionChange = () => {
+      invalidateQueriesMatching('commissions:');
+      handlePaymentChange();
+    };
 
       const handleProductChange = () => {
         invalidateQuery('products');
@@ -216,6 +222,7 @@ function AppShell() {
 
       eventSource.addEventListener('payment:created', handlePaymentChange);
       eventSource.addEventListener('payments:invalidate', handlePaymentChange);
+      eventSource.addEventListener('commission:created', handleCommissionChange);
 
       eventSource.addEventListener('product:created', handleProductChange);
       eventSource.addEventListener('product:updated', handleProductChange);

@@ -1,24 +1,15 @@
-import { useMemo, useState } from 'react';
-import { Calendar, DollarSign, AlertTriangle, TrendingUp } from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  ResponsiveContainer,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from 'recharts';
+import { CalendarDays, Clock3, RefreshCw, Users } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 
 import { apiFetch } from '../lib/api';
-import { formatCurrency, formatDateOnly, toDateKey, addDays } from '../lib/format';
-import { useApiQuery } from '../lib/data-store';
-import type { StatsOverviewResponse, StatsRevenueResponse } from '../types/api';
+import { formatDateTime } from '../lib/format';
+import { invalidateQuery, useApiQuery } from '../lib/data-store';
+import type { Booking, Service, StatsOverviewResponse } from '../types/api';
+
+type BookingWithService = Booking & { service: Service };
 
 const STATUS_LABELS = {
   scheduled: 'Programadas',
@@ -28,178 +19,242 @@ const STATUS_LABELS = {
 };
 
 export default function Dashboard() {
-  const { data: overview, status: overviewStatus, error: overviewError, refetch: refetchOverview } = useApiQuery<StatsOverviewResponse>(
-    'stats-overview',
-    async () => apiFetch<StatsOverviewResponse>('/api/stats/overview')
-  );
+  const {
+    data: overview,
+    status: overviewStatus,
+    error: overviewError,
+    refetch: refetchOverview,
+  } = useApiQuery<StatsOverviewResponse>('stats-overview', async () => apiFetch<StatsOverviewResponse>('/api/stats/overview'));
 
-  const [range, setRange] = useState<{ from: string; to: string }>(() => {
-    const now = new Date();
-    const from = toDateKey(addDays(now, -14));
-    const to = toDateKey(now);
-    return { from, to };
-  });
-
-  const revenueKey = `stats-revenue:${range.from}:${range.to}`;
-  const { data: revenue, status: revenueStatus, error: revenueError, refetch: refetchRevenue } = useApiQuery<StatsRevenueResponse>(
-    revenueKey,
+  const {
+    data: upcoming = [],
+    status: upcomingStatus,
+    error: upcomingError,
+    refetch: refetchUpcoming,
+  } = useApiQuery<BookingWithService[]>(
+    'bookings:upcoming:summary',
     async () => {
-      const params = new URLSearchParams();
-      if (range.from) params.set('from', range.from);
-      if (range.to) params.set('to', range.to);
-      const query = params.toString();
-      return apiFetch<StatsRevenueResponse>(`/api/stats/revenue${query ? `?${query}` : ''}`);
+      const response = await apiFetch<{ bookings: BookingWithService[] }>('/api/bookings/upcoming');
+      return response.bookings.slice(0, 5);
     }
   );
 
-  const chartData = useMemo(
-    () =>
-      (revenue?.series ?? []).map((point) => ({
-        date: formatDateOnly(point.date),
-        amount: point.amount,
-      })),
-    [revenue]
+  const {
+    data: pending = [],
+    status: pendingStatus,
+    error: pendingError,
+    refetch: refetchPending,
+  } = useApiQuery<BookingWithService[]>(
+    'bookings:pending:summary',
+    async () => {
+      const response = await apiFetch<{ bookings: BookingWithService[] }>('/api/bookings/unassigned');
+      return response.bookings.slice(0, 5);
+    }
   );
 
   const topServices = overview?.topServices ?? [];
 
+  const handleRefreshAll = () => {
+    invalidateQuery('stats-overview');
+    invalidateQuery('bookings:upcoming:summary');
+    invalidateQuery('bookings:pending:summary');
+    void refetchOverview();
+    void refetchUpcoming();
+    void refetchPending();
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-gray-500" /> Citas de hoy
-            </CardTitle>
+    <div className="max-w-6xl mx-auto space-y-8">
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefreshAll}
+          className="gap-2 rounded-full border-gray-200 shadow-sm"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Actualizar panel
+        </Button>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+          <CardHeader className="space-y-2">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-gray-500" />
+              <CardTitle className="text-lg font-semibold text-gray-900">Citas de hoy</CardTitle>
+            </div>
+            <p className="text-sm text-gray-500">Resumen rápido del estado de las citas programadas para la fecha actual.</p>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {overviewStatus === 'loading' && <p className="text-sm text-gray-500">Cargando…</p>}
-            {overviewStatus === 'error' && (
-              <div className="text-sm text-red-600 space-y-2">
-                <p>{overviewError instanceof Error ? overviewError.message : 'No se pudieron obtener las métricas.'}</p>
-                <Button size="sm" variant="outline" onClick={() => refetchOverview()}>
-                  Reintentar
-                </Button>
+          <CardContent>
+            {overviewStatus === 'loading' ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="h-20 rounded-xl bg-gray-100 animate-pulse" />
+                ))}
               </div>
-            )}
-            {overviewStatus === 'success' && overview && (
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(overview.todayBookings).map(([status, value]) => (
-                  <div key={status} className="flex flex-col rounded-lg border border-gray-200 p-3">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">{STATUS_LABELS[status as keyof typeof STATUS_LABELS]}</span>
-                    <span className="text-lg font-semibold text-gray-900">{value}</span>
+            ) : overviewStatus === 'error' ? (
+              <div className="flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+                <p>{overviewError instanceof Error ? overviewError.message : 'No fue posible cargar el resumen diario.'}</p>
+                <div>
+                  <Button variant="outline" size="sm" onClick={() => refetchOverview()}>
+                    Reintentar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Object.entries(overview?.todayBookings ?? {}).map(([status, value]) => (
+                  <div
+                    key={status}
+                    className="flex flex-col justify-between rounded-xl border border-gray-100 bg-gray-50/80 p-4"
+                  >
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
+                    </span>
+                    <span className="text-2xl font-semibold text-gray-900">{value}</span>
                   </div>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-gray-500" /> Ingresos del mes
-            </CardTitle>
+
+        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+          <CardHeader className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-gray-500" />
+              <CardTitle className="text-lg font-semibold text-gray-900">Servicios más solicitados</CardTitle>
+            </div>
+            <p className="text-sm text-gray-500">Ranking basado en las citas agendadas recientemente.</p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             {overviewStatus === 'loading' ? (
-              <p className="text-sm text-gray-500">Cargando…</p>
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
+                ))}
+              </div>
             ) : overviewStatus === 'error' ? (
-              <p className="text-sm text-red-600">No disponible</p>
+              <p className="text-sm text-red-600">
+                {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
+              </p>
+            ) : topServices.length === 0 ? (
+              <p className="text-sm text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
             ) : (
-              <p className="text-3xl font-semibold text-gray-900">{formatCurrency(overview?.monthlyRevenue ?? 0)}</p>
+              <div className="space-y-2">
+                {topServices.map((service) => (
+                  <div
+                    key={service.serviceId}
+                    className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{service.name}</p>
+                      <p className="text-xs text-gray-500">{service.count} citas</p>
+                    </div>
+                    <Badge variant="outline" className="border-gray-200 bg-white text-gray-700">
+                      #{service.count}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
             )}
-            <p className="text-xs text-gray-500 mt-2">Actualizado automáticamente con cada pago registrado.</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-gray-500" /> Stock bajo
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {overviewStatus === 'loading' ? (
-              <p className="text-sm text-gray-500">Cargando…</p>
-            ) : overviewStatus === 'error' ? (
-              <p className="text-sm text-red-600">No disponible</p>
-            ) : (
-              <p className="text-3xl font-semibold text-gray-900">{overview?.lowStockProducts ?? 0}</p>
-            )}
-            <p className="text-xs text-gray-500 mt-2">Productos que requieren reposición inmediata.</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-gray-500" /> Ingresos por día
-            </CardTitle>
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+          <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={range.from}
-                onChange={(event) => setRange((prev) => ({ ...prev, from: event.target.value }))}
-                max={range.to}
-              />
-              <Input
-                type="date"
-                value={range.to}
-                onChange={(event) => setRange((prev) => ({ ...prev, to: event.target.value }))}
-                min={range.from}
-              />
-              <Button variant="outline" size="sm" onClick={() => refetchRevenue()}>
-                Actualizar
-              </Button>
+              <Clock3 className="h-5 w-5 text-gray-500" />
+              <CardTitle className="text-lg font-semibold text-gray-900">Citas próximas</CardTitle>
             </div>
-          </CardHeader>
-          <CardContent className="h-72">
-            {revenueStatus === 'loading' && <p className="text-sm text-gray-500">Cargando gráfica…</p>}
-            {revenueStatus === 'error' && (
-              <div className="text-sm text-red-600 space-y-2">
-                <p>{revenueError instanceof Error ? revenueError.message : 'No fue posible generar la gráfica.'}</p>
-                <Button size="sm" variant="outline" onClick={() => refetchRevenue()}>
-                  Reintentar
-                </Button>
-              </div>
-            )}
-            {revenueStatus === 'success' && chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" stroke="#6b7280" fontSize={12} angle={-25} textAnchor="end" height={60} />
-                  <YAxis stroke="#6b7280" fontSize={12} tickFormatter={(value) => formatCurrency(value).replace('$', '$')} />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => label} />
-                  <Line type="monotone" dataKey="amount" stroke="#111827" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : revenueStatus === 'success' ? (
-              <p className="text-sm text-gray-500">No hay ingresos registrados en este rango.</p>
-            ) : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Servicios más solicitados</CardTitle>
+            <p className="text-sm text-gray-500">Las próximas 5 citas asignadas a colaboradoras.</p>
           </CardHeader>
           <CardContent className="space-y-3">
-            {overviewStatus === 'loading' && <p className="text-sm text-gray-500">Cargando…</p>}
-            {overviewStatus === 'error' && <p className="text-sm text-red-600">No disponible</p>}
-            {overviewStatus === 'success' && topServices.length === 0 && (
-              <p className="text-sm text-gray-500">Sin datos suficientes todavía.</p>
-            )}
-            {overviewStatus === 'success' && topServices.length > 0 && (
+            {upcomingStatus === 'loading' ? (
               <div className="space-y-2">
-                {topServices.map((service) => (
-                  <div key={service.serviceId} className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2">
-                    <div>
-                      <p className="font-medium text-sm text-gray-900">{service.name}</p>
-                      <p className="text-xs text-gray-500">{service.count} citas</p>
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="h-16 rounded-xl bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : upcomingStatus === 'error' ? (
+              <div className="flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+                <p>{upcomingError instanceof Error ? upcomingError.message : 'No fue posible cargar las citas próximas.'}</p>
+                <div>
+                  <Button variant="outline" size="sm" onClick={() => refetchUpcoming()}>
+                    Reintentar
+                  </Button>
+                </div>
+              </div>
+            ) : upcoming.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-sm text-gray-500">
+                No hay citas próximas asignadas. Asigna nuevas citas desde la sección de pendientes.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {upcoming.map((booking) => (
+                  <div
+                    key={booking.id}
+                    className="flex flex-col gap-1 rounded-xl border border-gray-100 bg-white p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-gray-900">{booking.clientName}</p>
+                      <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-600">
+                        {booking.status === 'confirmed' ? 'Confirmada' : 'Programada'}
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className="bg-gray-50 text-gray-700">
-                      #{service.count}
-                    </Badge>
+                    <p className="text-xs text-gray-500">{booking.service.name}</p>
+                    <p className="text-xs text-gray-500">{formatDateTime(booking.startTime)}</p>
+                    {booking.assignedEmail ? (
+                      <p className="text-xs text-gray-400">Colaboradora: {booking.assignedEmail}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+          <CardHeader className="space-y-2">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-gray-500" />
+              <CardTitle className="text-lg font-semibold text-gray-900">Citas pendientes</CardTitle>
+            </div>
+            <p className="text-sm text-gray-500">Citas sin asignar que requieren atención inmediata.</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingStatus === 'loading' ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="h-16 rounded-xl bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : pendingStatus === 'error' ? (
+              <div className="flex flex-col gap-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+                <p>{pendingError instanceof Error ? pendingError.message : 'No fue posible cargar las citas pendientes.'}</p>
+                <div>
+                  <Button variant="outline" size="sm" onClick={() => refetchPending()}>
+                    Reintentar
+                  </Button>
+                </div>
+              </div>
+            ) : pending.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-gray-200 bg-white p-6 text-sm text-gray-500">
+                No hay citas pendientes por asignar. Las nuevas citas aparecerán aquí automáticamente.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {pending.map((booking) => (
+                  <div key={booking.id} className="rounded-xl border border-gray-100 bg-white p-4">
+                    <p className="text-sm font-semibold text-gray-900">{booking.clientName}</p>
+                    <p className="text-xs text-gray-500">{booking.service.name}</p>
+                    <p className="text-xs text-gray-500">{formatDateTime(booking.startTime)}</p>
+                    {booking.notes ? (
+                      <p className="text-xs text-gray-400 line-clamp-1">Notas: {booking.notes}</p>
+                    ) : null}
                   </div>
                 ))}
               </div>

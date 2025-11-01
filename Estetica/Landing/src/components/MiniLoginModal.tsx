@@ -107,7 +107,10 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
     setIsLoading(true);
 
     try {
-      await login(formData.email.trim(), formData.password);
+      const token = await login(formData.email.trim(), formData.password);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('salon_auth', token);
+      }
       const user = await fetchMe();
       setSuccessMessage(
         user?.name ? `¡Hola ${user.name}! Redirigiendo al panel...` : '¡Inicio de sesión exitoso!'
@@ -119,6 +122,9 @@ export function MiniLoginModal({ isOpen, onClose, onLoginSuccess }: MiniLoginMod
         window.location.href = DASHBOARD_URL;
       }, 600);
     } catch (error) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('salon_auth');
+      }
       const message = error instanceof Error ? error.message : 'Error al iniciar sesión.';
       setErrors({ general: message || 'Error al iniciar sesión.' });
     } finally {

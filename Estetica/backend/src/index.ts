@@ -21,7 +21,7 @@ import {
   startOfMonth,
   startOfToday,
 } from './utils/timezone';
-import { sendAssignmentEmail } from './utils/mailer';
+import { sendAssignmentEmail, sendMail } from './utils/mailer';
 
 dotenv.config();
 
@@ -92,6 +92,12 @@ const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [BookingStatus.scheduled, BookingStatus.confirmed];
 
 const roundCurrency = (value: number) => Math.round(value * 100) / 100;
+
+const testEmailDateFormatter = new Intl.DateTimeFormat('es-MX', {
+  timeZone: DEFAULT_TZ,
+  dateStyle: 'full',
+  timeStyle: 'medium',
+});
 
 const ASSIGNMENT_EXPIRATION_HOURS = Number(process.env.ASSIGNMENT_EXPIRATION_HOURS || '24');
 const ASSIGNMENT_EXPIRATION_MS = ASSIGNMENT_EXPIRATION_HOURS * 60 * 60 * 1000;
@@ -181,6 +187,10 @@ const LOGIN_MAX_ATTEMPTS = 5;
 type LoginAttempt = { count: number; expiresAt: number };
 const loginAttempts = new Map<string, LoginAttempt>();
 
+const testEmailSchema = z.object({
+  to: z.string().email().optional(),
+});
+
 const loginRateLimiter = (req: Request, res: Response, next: NextFunction) => {
   const key = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
@@ -256,6 +266,44 @@ app.get('/api/health', (_req, res) => {
     'API operativa'
   );
 });
+
+app.post(
+  '/api/test-email',
+  authJWT,
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const payload = testEmailSchema.safeParse(req.body ?? {});
+    if (!payload.success) {
+      throw new HttpError(400, 'Parámetros inválidos', payload.error.flatten());
+    }
+
+    const to = payload.data.to ?? process.env.SMTP_USER ?? process.env.MAIL_FROM ?? '';
+    if (!to) {
+      throw new HttpError(400, 'No hay un destinatario configurado para la prueba de correo');
+    }
+
+    const subject = 'Correo de prueba - Estética Dashboard';
+    const formattedDate = testEmailDateFormatter.format(new Date());
+    const previewText = `Este es un correo de prueba enviado desde el dashboard el ${formattedDate}.`;
+
+    try {
+      const result = await sendMail({
+        to,
+        subject,
+        text: `${previewText}\n\nSi no solicitaste esta prueba, puedes ignorar este mensaje.`,
+        html: `
+          <p>Hola,</p>
+          <p>${previewText}</p>
+          <p>Si no solicitaste esta prueba, puedes ignorar este mensaje.</p>
+        `.trim(),
+      });
+
+      return sendSuccess(res, { delivered: true, to, transport: result ?? null }, 'Correo de prueba enviado');
+    } catch (error) {
+      console.error('[mailer] Error enviando correo de prueba', error);
+      throw new HttpError(500, 'No fue posible enviar el correo de prueba');
+    }
+  })
+);
 
 app.get(
   '/api/assignments/accept',

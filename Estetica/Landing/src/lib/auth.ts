@@ -56,5 +56,9 @@ export const logout = async (): Promise<void> => {
     if (import.meta.env.DEV) {
       console.warn("No fue posible cerrar la sesión de forma remota", error);
     }
+  } finally {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('salon_auth');
+    }
   }
 };

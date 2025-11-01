@@ -1,10 +1,14 @@
 import { DEFAULT_TZ } from './timezone';
 
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined;
+const DEFAULT_SMTP_HOST = 'smtp.gmail.com';
+const DEFAULT_SMTP_PORT = 587;
+
+const SMTP_HOST = process.env.SMTP_HOST || DEFAULT_SMTP_HOST;
+const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : DEFAULT_SMTP_PORT;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
-const SMTP_SECURE = process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
+const SMTP_SECURE =
+  process.env.SMTP_SECURE !== undefined ? process.env.SMTP_SECURE === 'true' : SMTP_PORT === 465;
 const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || 'no-reply@localhost';
 const MAIL_TIME_ZONE = process.env.MAIL_TIME_ZONE || DEFAULT_TZ;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
@@ -19,7 +23,7 @@ type NodemailerModule = {
 let nodemailerModule: NodemailerModule | null | false = null;
 let transporter: { sendMail: (message: Record<string, unknown>) => Promise<unknown> } | null = null;
 
-const isSmtpConfigured = Boolean(SMTP_HOST && SMTP_PORT);
+const isSmtpConfigured = Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS);
 
 const loadNodemailer = (): NodemailerModule | null => {
   if (nodemailerModule !== null) {
@@ -49,13 +53,10 @@ const ensureTransporter = () => {
       host: SMTP_HOST,
       port: SMTP_PORT,
       secure: SMTP_SECURE,
-      auth:
-        SMTP_USER && SMTP_PASS
-          ? {
-              user: SMTP_USER,
-              pass: SMTP_PASS,
-            }
-          : undefined,
+      auth: {
+        user: SMTP_USER!,
+        pass: SMTP_PASS!,
+      },
     });
   }
 

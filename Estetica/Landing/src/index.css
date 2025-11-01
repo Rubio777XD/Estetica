@@ -417,29 +417,49 @@
     overflow-x: hidden;
   }
 
-  body:before {
+  #root {
+    position: relative;
+    z-index: 0;
+  }
+
+  body:before,
+  body:after,
+  #root:before {
     content: "";
-    background: radial-gradient(600px circle at var(--spotlight-x, 50%) var(--spotlight-y, 30%), #eadcc714 0%, #eadcc70a 35%, transparent 70%);
+    position: fixed;
+    inset: -10%;
     pointer-events: none;
     z-index: 1;
-    width: 150%;
-    height: 150%;
-    animation: 20s ease-in-out infinite spotlightMove;
-    position: fixed;
-    top: 0;
-    left: 0;
+    will-change: transform, opacity;
+    transition: opacity .6s ease;
+  }
+
+  body:before {
+    background: radial-gradient(520px circle at 35% 22%, #eadcc73f 0%, #eadcc71a 45%, #0000 75%);
+    animation: spotlight-float-one 22s ease-in-out infinite alternate;
+    opacity: .82;
   }
 
   body:after {
-    content: "";
-    pointer-events: none;
-    z-index: 1;
-    background: radial-gradient(800px 400px at 30% 20%, #eadcc70d 0%, #0000 50%);
-    width: 100%;
-    height: 100%;
-    position: fixed;
-    top: 0;
-    left: 0;
+    background: radial-gradient(480px circle at 72% 38%, #eadcc732 0%, #eadcc711 52%, #0000 80%);
+    animation: spotlight-float-two 26s ease-in-out infinite alternate;
+    opacity: .7;
+  }
+
+  #root:before {
+    background: radial-gradient(440px circle at 48% 78%, #eadcc72f 0%, #eadcc70f 50%, #0000 78%);
+    animation: spotlight-float-three 28s ease-in-out infinite alternate;
+    opacity: .65;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body:before,
+    body:after,
+    #root:before {
+      animation: none;
+      transform: none !important;
+      opacity: .78;
+    }
   }
 
   :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) h1 {
@@ -3136,45 +3156,54 @@
   --sidebar-ring: oklch(.439 0 0);
 }
 
-@keyframes spotlightMove {
+@keyframes spotlight-float-one {
   0% {
-    --spotlight-x: 40%;
-    --spotlight-y: 25%;
-    transform: translate(-10%, -5%)rotate(0);
-  }
-
-  25% {
-    --spotlight-x: 70%;
-    --spotlight-y: 40%;
-    transform: translate(5%, 10%)rotate(90deg);
+    transform: translate3d(-6%, -4%, 0)scale(.95);
+    opacity: .72;
   }
 
   50% {
-    --spotlight-x: 60%;
-    --spotlight-y: 20%;
-    transform: translate(10%, -5%)rotate(180deg);
-  }
-
-  75% {
-    --spotlight-x: 30%;
-    --spotlight-y: 60%;
-    transform: translate(-5%, 15%)rotate(270deg);
+    transform: translate3d(8%, 6%, 0)scale(1.05);
+    opacity: .9;
   }
 
   100% {
-    --spotlight-x: 40%;
-    --spotlight-y: 25%;
-    transform: translate(-10%, -5%)rotate(360deg);
+    transform: translate3d(-4%, 4%, 0)scale(.98);
+    opacity: .78;
   }
 }
 
-@media (width <= 768px) {
-  body:before {
-    background: radial-gradient(400px circle at var(--spotlight-x, 50%) var(--spotlight-y, 30%), #eadcc70a 0%, #eadcc705 35%, transparent 70%);
+@keyframes spotlight-float-two {
+  0% {
+    transform: translate3d(6%, -8%, 0)scale(1.04);
+    opacity: .64;
   }
 
-  body:after {
-    background: radial-gradient(400px 200px at 30% 20%, #eadcc708 0%, #0000 50%);
+  45% {
+    transform: translate3d(-5%, 3%, 0)scale(.96);
+    opacity: .78;
+  }
+
+  100% {
+    transform: translate3d(4%, 6%, 0)scale(1.02);
+    opacity: .7;
+  }
+}
+
+@keyframes spotlight-float-three {
+  0% {
+    transform: translate3d(-3%, 5%, 0)scale(.98);
+    opacity: .62;
+  }
+
+  55% {
+    transform: translate3d(5%, -4%, 0)scale(1.05);
+    opacity: .82;
+  }
+
+  100% {
+    transform: translate3d(-2%, 6%, 0)scale(1);
+    opacity: .68;
   }
 }
 

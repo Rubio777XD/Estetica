@@ -253,6 +253,284 @@ const buildGoogleCalendarUrl = (options: {
   return `https://www.google.com/calendar/render?${params.toString()}`;
 };
 
+const EMAIL_BACKGROUND = '#050505';
+const EMAIL_CARD_BACKGROUND = '#111111';
+const EMAIL_PANEL_BACKGROUND = '#181818';
+const EMAIL_BORDER = 'rgba(234, 220, 199, 0.28)';
+const EMAIL_TEXT_PRIMARY = '#F8F5F0';
+const EMAIL_TEXT_MUTED = '#CBBFAF';
+const EMAIL_TEXT_SUBTLE = '#9E9385';
+const EMAIL_GOLD = '#EADCC7';
+const EMAIL_GOLD_HOVER = '#F3E8D7';
+const EMAIL_GOLD_ACTIVE = '#D9C6A8';
+
+const LUXURY_EMAIL_STYLES = `
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    padding: 32px 20px;
+    background: ${EMAIL_BACKGROUND};
+    color: ${EMAIL_TEXT_PRIMARY};
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.6;
+  }
+
+  .wrapper {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: ${EMAIL_CARD_BACKGROUND};
+    border-radius: 28px;
+    border: 1px solid ${EMAIL_BORDER};
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
+  }
+
+  .header {
+    padding: 38px 32px 32px 32px;
+    background: linear-gradient(135deg, #050505 0%, #181818 100%);
+    text-align: center;
+    border-bottom: 1px solid rgba(234, 220, 199, 0.22);
+  }
+
+  .brand {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.32em;
+    font-size: 12px;
+    color: ${EMAIL_TEXT_SUBTLE};
+  }
+
+  .title {
+    margin: 18px 0 0 0;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+    color: ${EMAIL_GOLD};
+    font-weight: 600;
+  }
+
+  .content {
+    padding: 32px;
+    background: ${EMAIL_CARD_BACKGROUND};
+  }
+
+  .paragraph {
+    margin: 0 0 18px 0;
+    font-size: 15px;
+    color: ${EMAIL_TEXT_PRIMARY};
+  }
+
+  .paragraph.muted {
+    color: ${EMAIL_TEXT_MUTED};
+  }
+
+  .info-card {
+    margin-top: 24px;
+    padding: 22px 24px;
+    background: ${EMAIL_PANEL_BACKGROUND};
+    border-radius: 20px;
+    border: 1px solid rgba(234, 220, 199, 0.18);
+  }
+
+  .info-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .info-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: ${EMAIL_TEXT_SUBTLE};
+    padding: 6px 0;
+    vertical-align: top;
+  }
+
+  .info-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: ${EMAIL_TEXT_PRIMARY};
+    padding: 6px 0;
+    text-align: right;
+  }
+
+  .note {
+    margin-top: 24px;
+    padding: 18px 20px;
+    background: rgba(234, 220, 199, 0.12);
+    border-radius: 18px;
+    border: 1px solid rgba(234, 220, 199, 0.22);
+    color: ${EMAIL_TEXT_PRIMARY};
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .note strong {
+    color: ${EMAIL_GOLD};
+  }
+
+  .cta {
+    margin-top: 30px;
+    text-align: center;
+  }
+
+  .button {
+    display: inline-block;
+    background: ${EMAIL_GOLD};
+    color: #111111 !important;
+    padding: 14px 36px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .button:hover {
+    background: ${EMAIL_GOLD_HOVER} !important;
+    color: #111111 !important;
+  }
+
+  .button:active {
+    background: ${EMAIL_GOLD_ACTIVE} !important;
+    color: #111111 !important;
+  }
+
+  .cta-desc {
+    margin: 12px auto 0 auto;
+    max-width: 420px;
+    font-size: 13px;
+    color: ${EMAIL_TEXT_MUTED};
+  }
+
+  .footer {
+    padding: 24px 32px 32px 32px;
+    text-align: center;
+    background: ${EMAIL_CARD_BACKGROUND};
+    border-top: 1px solid rgba(234, 220, 199, 0.22);
+  }
+
+  .footer p {
+    margin: 4px 0;
+    font-size: 12px;
+    color: ${EMAIL_TEXT_SUBTLE};
+  }
+
+  @media (max-width: 600px) {
+    body {
+      padding: 24px 12px;
+    }
+
+    .content {
+      padding: 28px 20px;
+    }
+  }
+`;
+
+interface LuxuryEmailTemplateOptions {
+  title: string;
+  greeting?: string;
+  introLines?: string[];
+  detailRows: { label: string; value: string }[];
+  notes?: string | null;
+  notesLabel?: string;
+  action?: { href: string; label: string };
+  actionDescription?: string;
+  outroLines?: string[];
+  structuredData?: Record<string, unknown>;
+}
+
+const buildLuxuryEmailHtml = (options: LuxuryEmailTemplateOptions) => {
+  const {
+    title,
+    greeting,
+    introLines = [],
+    detailRows,
+    notes,
+    notesLabel = 'Notas adicionales',
+    action,
+    actionDescription,
+    outroLines = [],
+    structuredData,
+  } = options;
+
+  const detailRowsHtml = detailRows
+    .map(
+      (row) => `
+        <tr>
+          <td class="info-label">${escapeHtml(row.label)}</td>
+          <td class="info-value">${escapeHtml(row.value)}</td>
+        </tr>
+      `,
+    )
+    .join('');
+
+  const notesHtml = notes && notes.trim().length > 0
+    ? `<div class="note"><strong>${escapeHtml(notesLabel)}:</strong><br />${escapeHtml(notes).replace(/\r?\n/g, '<br />')}</div>`
+    : '';
+
+  const greetingHtml = greeting ? `<p class="paragraph">${escapeHtml(greeting)}</p>` : '';
+  const introHtml = introLines.map((line) => `<p class="paragraph">${escapeHtml(line)}</p>`).join('');
+  const outroHtml = outroLines.map((line) => `<p class="paragraph muted">${escapeHtml(line)}</p>`).join('');
+
+  const actionHtml = action
+    ? `<div class="cta">
+        <a class="button" href="${escapeHtml(action.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(action.label)}</a>
+        ${actionDescription ? `<p class="cta-desc">${escapeHtml(actionDescription)}</p>` : ''}
+      </div>`
+    : '';
+
+  const structuredDataScript = structuredData
+    ? `<script type="application/ld+json">${JSON.stringify(structuredData)}</script>`
+    : '';
+
+  return `<!DOCTYPE html>
+  <html lang="es" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta name="x-apple-disable-message-reformatting" />
+      <title>${escapeHtml(title)}</title>
+      <style>${LUXURY_EMAIL_STYLES}</style>
+      ${structuredDataScript}
+    </head>
+    <body style="background:${EMAIL_BACKGROUND}; margin:0; padding:32px 20px;">
+      <div class="wrapper">
+        <div class="card">
+          <div class="header">
+            <p class="brand">${escapeHtml(SALON_FULL_NAME)}</p>
+            <h1 class="title">${escapeHtml(title)}</h1>
+          </div>
+          <div class="content">
+            ${greetingHtml}
+            ${introHtml}
+            <div class="info-card">
+              <table class="info-table" role="presentation" cellspacing="0" cellpadding="0">
+                ${detailRowsHtml}
+              </table>
+            </div>
+            ${notesHtml}
+            ${actionHtml}
+            ${outroHtml}
+          </div>
+          <div class="footer">
+            <p>${escapeHtml(SALON_FULL_NAME)}</p>
+            <p>${escapeHtml(SALON_ADDRESS)}</p>
+            <p>Tel. ${escapeHtml(SALON_PHONE)}</p>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>`;
+};
+
 export interface BookingConfirmationEmailOptions {
   to: string;
   bookingId: string;
@@ -300,81 +578,32 @@ export const sendBookingConfirmationEmail = async (options: BookingConfirmationE
     },
   };
 
-  const html = `<!DOCTYPE html>
-  <html lang="es">
-    <head>
-      <meta charSet="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Confirmación de cita</title>
-      <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f9fafb; margin: 0; padding: 24px; color: #111827; }
-        .wrapper { max-width: 600px; margin: 0 auto; }
-        .card { background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12); }
-        .header { background: linear-gradient(135deg, #111827 0%, #1f2937 100%); color: #ffffff; padding: 32px 28px; }
-        .header h1 { margin: 0; font-size: 26px; font-weight: 600; }
-        .content { padding: 32px 28px; }
-        .info-card { background: #f3f4f6; border-radius: 16px; padding: 20px; margin-top: 20px; }
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; }
-        .info-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
-        .info-value { font-size: 16px; font-weight: 600; color: #111827; }
-        .cta { display: inline-block; background: #111827; color: #ffffff; padding: 14px 28px; border-radius: 9999px; font-weight: 600; text-decoration: none; margin-top: 24px; }
-        .footer { padding: 24px 28px 32px; color: #6b7280; font-size: 13px; text-align: center; }
-      </style>
-      <script type="application/ld+json">${JSON.stringify(schema)}</script>
-    </head>
-    <body>
-      <div class="wrapper">
-        <div class="card">
-          <div class="header">
-            <p style="margin: 0 0 8px 0; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7);">${SALON_FULL_NAME}</p>
-            <h1>Tu cita ha sido confirmada</h1>
-          </div>
-          <div class="content">
-            <p style="margin: 0 0 16px 0; font-size: 16px;">Hola ${escapeHtml(clientName)},</p>
-            <p style="margin: 0 0 20px 0; line-height: 1.6; font-size: 15px; color: #374151;">
-              ¡Gracias por confiar en nosotras! Te esperamos en nuestro estudio para tu servicio de belleza.
-            </p>
-            <div class="info-card">
-              <div class="info-row">
-                <span class="info-label">Servicio</span>
-                <span class="info-value">${escapeHtml(serviceName)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Fecha y hora</span>
-                <span class="info-value">${escapeHtml(dayText)} · ${escapeHtml(startHour)} – ${escapeHtml(endHour)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Profesional</span>
-                <span class="info-value">${escapeHtml(assignedLabel)}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Dirección</span>
-                <span class="info-value">${escapeHtml(SALON_ADDRESS)}</span>
-              </div>
-              <div class="info-row" style="margin-bottom: 0;">
-                <span class="info-label">Contacto</span>
-                <span class="info-value">Tel. ${escapeHtml(SALON_PHONE)}</span>
-              </div>
-            </div>
-            <a class="cta" href="${googleCalendarUrl}">Agregar al calendario</a>
-            <p style="margin: 24px 0 0 0; font-size: 14px; color: #4b5563; line-height: 1.5;">
-              Si necesitas reprogramar o tienes alguna duda, contáctanos al <strong>${escapeHtml(SALON_PHONE)}</strong> o responde a este correo.
-            </p>
-            ${notes ? `<p style="margin: 18px 0 0 0; font-size: 14px; color: #6b7280;">Notas adicionales: ${escapeHtml(notes)}</p>` : ''}
-          </div>
-          <div class="footer">
-            <p style="margin: 0 0 4px 0;">${SALON_FULL_NAME}</p>
-            <p style="margin: 0;">${SALON_ADDRESS}</p>
-          </div>
-        </div>
-      </div>
-    </body>
-  </html>`;
+  const html = buildLuxuryEmailHtml({
+    title: 'Tu cita ha sido confirmada',
+    greeting: `Hola ${clientName},`,
+    introLines: [
+      '¡Gracias por confiar en nosotras! Tu espacio está reservado y listo para consentirte.',
+      'Estos son los detalles de tu visita a nuestro estudio premium:',
+    ],
+    detailRows: [
+      { label: 'Servicio', value: serviceName },
+      { label: 'Fecha y hora', value: `${dayText} · ${startHour} – ${endHour}` },
+      { label: 'Profesional', value: assignedLabel },
+      { label: 'Dirección', value: SALON_ADDRESS },
+      { label: 'Contacto', value: `Tel. ${SALON_PHONE}` },
+    ],
+    notes,
+    notesLabel: 'Notas adicionales',
+    action: { href: googleCalendarUrl, label: 'Agregar al calendario' },
+    actionDescription: 'Guarda esta cita en tu agenda y recibe recordatorios en el horario que prefieras.',
+    outroLines: [`Si necesitas reprogramar o tienes alguna duda, contáctanos al ${SALON_PHONE} o responde a este correo.`],
+    structuredData: schema,
+  });
 
   const textLines = [
     `Hola ${clientName},`,
     '',
-    'Tu cita fue confirmada.',
+    'Tu cita fue confirmada en Studio de Belleza AR.',
     `Servicio: ${serviceName}.`,
     `Fecha: ${dayText}.`,
     `Horario: ${startHour} – ${endHour}.`,
@@ -382,10 +611,10 @@ export const sendBookingConfirmationEmail = async (options: BookingConfirmationE
     `Dirección: ${SALON_ADDRESS}.`,
     `Teléfono: ${SALON_PHONE}.`,
     '',
-    'Agrega el evento a tu calendario: ' + googleCalendarUrl,
+    `Agrega el evento a tu calendario: ${googleCalendarUrl}`,
   ];
   if (notes) {
-    textLines.push('', `Notas: ${notes}`);
+    textLines.push('', `Notas adicionales: ${notes}`);
   }
 
   const icalEventContent = buildIcsContent({
@@ -443,30 +672,31 @@ export const sendAssignmentEmail = async (options: AssignmentEmailOptions) => {
   textLines.push(
     '',
     `Acepta la cita aquí: ${acceptUrl}`,
-    'Este enlace vence en 24 horas.',
-    `Fecha límite: ${expiresText}.`,
+    `Este enlace vence el ${expiresText}.`,
     '',
     'Si no puedes tomarla, simplemente ignora este mensaje.'
   );
 
-  const html = `
-    <div style="font-family: 'Helvetica Neue', Arial, sans-serif; color: #111827; line-height: 1.5;">
-      <h2 style="font-size: 20px; font-weight: 600;">¡Hola!</h2>
-      <p style="margin: 12px 0;">Has sido invitada a tomar la cita de <strong>${clientName}</strong> para el servicio <strong>${serviceName}</strong>.</p>
-      <p style="margin: 12px 0;"><strong>Horario:</strong> ${windowText}</p>
-      ${
-        notes
-          ? `<p style="margin: 12px 0; background-color: #F9FAFB; padding: 12px; border-radius: 8px;"><strong>Notas del cliente:</strong><br />${notes}</p>`
-          : ''
-      }
-      <p style="margin: 12px 0;">Para aceptar la cita haz clic en el siguiente botón:</p>
-      <p style="margin: 20px 0;">
-        <a href="${acceptUrl}" style="display: inline-block; background-color: #000000; color: #FFFFFF; padding: 12px 24px; border-radius: 9999px; text-decoration: none; font-weight: 600;">Aceptar invitación</a>
-      </p>
-      <p style="margin: 12px 0;">Este enlace vence en 24 horas (hasta ${expiresText}).</p>
-      <p style="margin: 12px 0; font-size: 12px; color: #6B7280;">Si no puedes tomarla, simplemente ignora este mensaje.</p>
-    </div>
-  `;
+  const html = buildLuxuryEmailHtml({
+    title: 'Invitación a tomar una cita',
+    greeting: 'Hola,',
+    introLines: [
+      `Has sido invitada a tomar la cita de ${clientName} para el servicio ${serviceName}.`,
+      'Confirma tu disponibilidad dando clic en el botón dorado.',
+    ],
+    detailRows: [
+      { label: 'Servicio', value: serviceName },
+      { label: 'Cliente', value: clientName },
+      { label: 'Horario', value: windowText },
+      { label: 'Dirección', value: SALON_ADDRESS },
+      { label: 'Contacto', value: `Tel. ${SALON_PHONE}` },
+    ],
+    notes,
+    notesLabel: 'Notas del cliente',
+    action: { href: acceptUrl, label: 'Aceptar invitación' },
+    actionDescription: `El enlace vence el ${expiresText}.`,
+    outroLines: ['Si no puedes tomarla, simplemente ignora este mensaje y otra compañera podrá aceptarla.'],
+  });
 
   await sendMail({
     to,

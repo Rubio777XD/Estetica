@@ -269,6 +269,7 @@ const main = async () => {
           amount: 300,
           method: 'cash',
           commissionPercentage: 50,
+          completedBy: 'Smoke Tester',
         },
       });
       if (!response.ok || !response.data) {

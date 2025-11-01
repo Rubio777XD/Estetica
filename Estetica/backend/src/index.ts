@@ -21,7 +21,7 @@ import {
   startOfMonth,
   startOfToday,
 } from './utils/timezone';
-import { sendAssignmentEmail } from './utils/mailer';
+import { sendAssignmentEmail, sendBookingConfirmationEmail } from './utils/mailer';
 import emailRoutes from './routes/email';
 
 dotenv.config();
@@ -39,6 +39,16 @@ app.use(
 
 app.use(express.json());
 app.use('/api', emailRoutes);
+
+const SALON_SCHEDULE: Record<number, { open: number; close: number }> = {
+  0: { open: 9, close: 21 },
+  1: { open: 9, close: 20 },
+  2: { open: 9, close: 20 },
+  3: { open: 9, close: 20 },
+  4: { open: 9, close: 21 },
+  5: { open: 9, close: 21 },
+  6: { open: 9, close: 21 },
+};
 
 class HttpError extends Error {
   status: number;
@@ -128,6 +138,37 @@ const bookingDateFormatter = new Intl.DateTimeFormat('es-MX', {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+
+type InviteEntry = { email: string; name?: string | null };
+
+const parseInviteEntry = (value: string): InviteEntry => {
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed.email === 'string') {
+      return { email: normalizeEmail(parsed.email), name: parsed.name ?? null };
+    }
+  } catch (error) {
+    // fallback to raw value
+  }
+  return { email: normalizeEmail(value), name: null };
+};
+
+const serializeInviteEntry = (entry: InviteEntry) =>
+  JSON.stringify({ email: normalizeEmail(entry.email), name: entry.name ? entry.name.trim() : null });
+
+const EMAIL_MATCHER = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+const extractEmailFromNotes = (notes?: string | null) => {
+  if (!notes) return null;
+  const match = notes.match(EMAIL_MATCHER);
+  return match ? normalizeEmail(match[0]) : null;
+};
+
+const getAssigneeName = async (email?: string | null) => {
+  if (!email) return null;
+  const user = await prisma.user.findUnique({ where: { email }, select: { name: true } });
+  return user?.name ?? null;
+};
 
 const assignmentPublicSelect = {
   id: true,
@@ -318,7 +359,7 @@ app.get(
 
       const updatedBooking = await tx.booking.update({
         where: { id: assignment.bookingId },
-        data: { assignedEmail: assignment.email, assignedAt: new Date() },
+        data: { assignedEmail: assignment.email, assignedAt: new Date(), confirmedEmail: assignment.email },
         include: { service: true },
       });
 
@@ -433,6 +474,71 @@ publicRouter.get(
     });
 
     return sendSuccess(res, { services }, 'Servicios públicos');
+  })
+);
+
+publicRouter.get(
+  '/bookings/availability',
+  asyncHandler(async (req, res) => {
+    const parsed = availabilityQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Fecha inválida', parsed.error.flatten());
+    }
+
+    const { date } = parsed.data;
+
+    let startOfDay: Date;
+    try {
+      startOfDay = parseDateOnly(date);
+    } catch (error) {
+      throw new HttpError(400, 'Fecha inválida');
+    }
+
+    const schedule = SALON_SCHEDULE[startOfDay.getUTCDay()];
+    if (!schedule) {
+      return sendSuccess(
+        res,
+        { date, timeZone: DEFAULT_TZ, slots: [], bookedWindows: [] },
+        'Sin horario configurado'
+      );
+    }
+
+    const endOfDay = parseDateOnly(date, { endOfDay: true });
+    const now = new Date();
+
+    const bookings = await prisma.booking.findMany({
+      where: {
+        startTime: { gte: startOfDay, lt: endOfDay },
+        status: { in: [BookingStatus.scheduled, BookingStatus.confirmed] },
+      },
+      select: { id: true, startTime: true, endTime: true },
+    });
+
+    const slots: { start: string; end: string; available: boolean }[] = [];
+    for (let hour = schedule.open; hour < schedule.close; hour += 1) {
+      const slotStart = new Date(startOfDay.getTime() + hour * 60 * 60 * 1000);
+      const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
+      const overlaps = bookings.some((booking) => slotStart < booking.endTime && slotEnd > booking.startTime);
+      const available = !overlaps && slotEnd > now;
+      slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString(), available });
+    }
+
+    const bookedWindows = bookings.map((booking) => ({
+      id: booking.id,
+      start: booking.startTime.toISOString(),
+      end: booking.endTime.toISOString(),
+    }));
+
+    return sendSuccess(
+      res,
+      {
+        date,
+        timeZone: DEFAULT_TZ,
+        slots,
+        bookedWindows,
+      },
+      'Disponibilidad generada'
+    );
   })
 );
 
@@ -587,6 +693,7 @@ protectedRouter.delete(
 // Bookings
 const bookingCreateSchema = z.object({
   clientName: z.string().trim().min(1).max(120),
+  clientEmail: z.string().email().optional().nullable(),
   serviceId: z.string().cuid(),
   startTime: z.string().min(1),
   notes: z.string().max(500).optional().nullable(),
@@ -611,6 +718,7 @@ const bookingStatusSchema = z.object({
 const assignmentCreateSchema = z.object({
   bookingId: z.string().cuid(),
   email: z.string().email(),
+  name: z.string().trim().min(1).max(120).optional(),
 });
 
 const bookingQuerySchema = z.object({
@@ -626,10 +734,17 @@ const bookingQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
+const availabilityQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 const bookingCompleteSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   method: z.nativeEnum(PaymentMethod),
   commissionPercentage: z.coerce.number().min(0).max(100),
+  completedBy: z.string().trim().min(1).max(100),
 });
 
 const commissionCreateSchema = z.object({
@@ -741,7 +856,7 @@ protectedRouter.post(
     }
 
     const booking = await prisma.$transaction(async (tx) => {
-      const { clientName, serviceId, startTime, notes } = result.data;
+      const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) {
         throw new HttpError(404, 'Servicio no encontrado');
@@ -754,8 +869,10 @@ protectedRouter.post(
 
       const end = addMinutes(start, service.duration);
       const normalized = normalizeNotes(notes);
+      const normalizedClientEmail = clientEmail ? normalizeEmail(clientEmail) : null;
       const data: Parameters<typeof tx.booking.create>[0]['data'] = {
         clientName,
+        clientEmail: normalizedClientEmail,
         serviceId,
         startTime: start,
         endTime: end,
@@ -785,7 +902,7 @@ publicRouter.post(
     }
 
     const booking = await prisma.$transaction(async (tx) => {
-      const { clientName, serviceId, startTime, notes } = result.data;
+      const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) {
         throw new HttpError(404, 'Servicio no encontrado');
@@ -797,8 +914,10 @@ publicRouter.post(
       }
 
       const normalized = normalizeNotes(notes);
+      const normalizedClientEmail = clientEmail ? normalizeEmail(clientEmail) : null;
       const data: Parameters<typeof tx.booking.create>[0]['data'] = {
         clientName,
+        clientEmail: normalizedClientEmail,
         serviceId,
         startTime: start,
         endTime: addMinutes(start, service.duration),
@@ -833,7 +952,7 @@ protectedRouter.put(
         throw new HttpError(404, 'Cita no encontrada');
       }
 
-      const { clientName, serviceId, startTime, notes, status } = result.data;
+      const { clientName, clientEmail, serviceId, startTime, notes, status } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
       if (!service) {
         throw new HttpError(404, 'Servicio no encontrado');
@@ -845,8 +964,10 @@ protectedRouter.put(
       }
 
       const normalized = normalizeNotes(notes);
+      const normalizedClientEmail = clientEmail ? normalizeEmail(clientEmail) : null;
       const updateData: Parameters<typeof tx.booking.update>[0]['data'] = {
         clientName,
+        clientEmail: normalizedClientEmail,
         serviceId,
         startTime: start,
         endTime: addMinutes(start, service.duration),
@@ -912,11 +1033,38 @@ protectedRouter.patch(
       throw new HttpError(404, 'Cita no encontrada');
     }
 
+    const previousStatus = existing.status;
     const booking = await prisma.booking.update({
       where: { id: req.params.id },
       data: { status: result.data.status },
       include: { service: true, payments: true },
     });
+
+    if (booking.status === BookingStatus.confirmed && previousStatus !== BookingStatus.confirmed) {
+      const contactEmail = booking.clientEmail ?? extractEmailFromNotes(booking.notes);
+      if (contactEmail) {
+        try {
+          const professionalEmail = booking.confirmedEmail ?? booking.assignedEmail ?? null;
+          const professionalName = await getAssigneeName(professionalEmail);
+          await sendBookingConfirmationEmail({
+            to: contactEmail,
+            bookingId: booking.id,
+            clientName: booking.clientName,
+            serviceName: booking.service.name,
+            start: booking.startTime,
+            end: booking.endTime,
+            assignedName: professionalName,
+            assignedEmail: professionalEmail,
+            notes: booking.notes ?? null,
+          });
+        } catch (error) {
+          console.error('[mailer] No fue posible enviar confirmación de cita', {
+            bookingId: booking.id,
+            error: error instanceof Error ? error.message : error,
+          });
+        }
+      }
+    }
 
     broadcastEvent('booking:status', { id: booking.id, status: booking.status }, 'auth');
     broadcastEvent('stats:invalidate', { reason: 'booking-status' }, 'auth');
@@ -946,7 +1094,8 @@ protectedRouter.post(
       throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
     }
 
-    const { amount, method, commissionPercentage } = parsed.data;
+    const { amount, method, commissionPercentage, completedBy } = parsed.data;
+    const completedByName = completedBy.trim();
 
     const result = await prisma.$transaction(async (tx) => {
       const booking = await tx.booking.findUnique({
@@ -993,7 +1142,7 @@ protectedRouter.post(
 
       const updatedBooking = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: BookingStatus.done },
+        data: { status: BookingStatus.done, completedBy: completedByName },
         include: { service: true, payments: true, commissions: true },
       });
 
@@ -1018,8 +1167,9 @@ protectedRouter.post(
       throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
     }
 
-    const { bookingId, email } = parsed.data;
+    const { bookingId, email, name } = parsed.data;
     const normalizedEmail = normalizeEmail(email);
+    const inviteeName = name?.trim() ? name.trim() : null;
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
@@ -1036,26 +1186,50 @@ protectedRouter.post(
 
     await expireStaleAssignments(bookingId);
 
-    const existingPending = await prisma.assignment.findFirst({
-      where: { bookingId, status: AssignmentStatus.pending },
+    const inviteEntries = (booking.invitedEmails ?? []).map(parseInviteEntry);
+    const existingInvitesByEmail = new Map<string, { index: number; entry: InviteEntry }>();
+    inviteEntries.forEach((entry, index) => {
+      existingInvitesByEmail.set(entry.email, { index, entry });
     });
 
-    if (existingPending) {
-      throw new HttpError(409, 'Ya existe una invitación pendiente para esta cita');
+    if (existingInvitesByEmail.has(normalizedEmail)) {
+      const { index, entry: existingEntry } = existingInvitesByEmail.get(normalizedEmail)!;
+      inviteEntries[index] = {
+        email: normalizedEmail,
+        name: inviteeName ?? existingEntry.name ?? null,
+      };
+    } else {
+      if (inviteEntries.length >= 3) {
+        throw new HttpError(409, 'Solo se pueden enviar hasta 3 invitaciones por cita');
+      }
+      inviteEntries.push({ email: normalizedEmail, name: inviteeName });
     }
+
+    const updatedInvitedEmails = inviteEntries.map(serializeInviteEntry);
 
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + ASSIGNMENT_EXPIRATION_MS);
 
-    const assignment = await prisma.assignment.create({
-      data: {
-        bookingId,
-        email: normalizedEmail,
-        token,
-        expiresAt,
-      },
-      select: assignmentPublicSelect,
+    const { assignment } = await prisma.$transaction(async (tx) => {
+      const created = await tx.assignment.create({
+        data: {
+          bookingId,
+          email: normalizedEmail,
+          token,
+          expiresAt,
+        },
+        select: assignmentPublicSelect,
+      });
+
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: { invitedEmails: updatedInvitedEmails },
+      });
+
+      return { assignment: created };
     });
+
+    booking.invitedEmails = updatedInvitedEmails;
 
     const acceptUrl = buildAssignmentAcceptUrl(token);
 

@@ -4,7 +4,19 @@ Solución integral para administrar agendas, servicios y colaboradoras de un sal
 
 Plataforma pensada para equipos de estética que necesitan captar clientes desde la landing, operar citas y pagos en tiempo real y coordinar colaboradoras vía invitaciones temporales.
 
+## ✨ Actualización – Gestión avanzada de citas
+
+La última iteración incorpora un flujo integral para confirmar y terminar citas sin perder trazabilidad:
+
+- Correo de confirmación con HTML responsivo, metadatos `schema.org/Event` y archivo `.ics` para que Gmail y Google Calendar lo detecten automáticamente como evento.
+- Invitaciones múltiples para hasta tres colaboradoras por cita, con historial visible y autoconfirmación de la primera persona que acepta.
+- Modal de cancelación con doble confirmación que bloquea cancelaciones accidentales.
+- Registro obligatorio de quién completó el servicio cuando se marca como terminado (`completedBy`).
+- Generación dinámica de horarios en la landing considerando los horarios del salón y bloqueando espacios ocupados.
+- Interfaz depurada: cards de servicios sin imágenes redundantes y dashboard sin acciones obsoletas.
+
 ## Tabla de contenidos
+- [✨ Actualización – Gestión avanzada de citas](#-actualización--gestión-avanzada-de-citas)
 - [Arquitectura (alto nivel)](#arquitectura-alto-nivel)
 - [Módulos del sistema](#modulos-del-sistema)
 - [Modelado de datos (Prisma)](#modelado-de-datos-prisma)
@@ -126,12 +138,13 @@ SESSION_COOKIE_DOMAIN=
 PUBLIC_API_URL=http://localhost:3000
 PUBLIC_LANDING_URL=http://localhost:3001
 PUBLIC_DASHBOARD_URL=http://localhost:3003
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_PASS=
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=mailestetica@gmail.com
+SMTP_PASS=app_password_generado
 SMTP_SECURE=false
-MAIL_FROM="JR Studio <no-reply@example.com>"
+MAIL_FROM="Studio de Belleza AR <mailestetica@gmail.com>"
+MAIL_ORGANIZER_EMAIL=mailestetica@gmail.com
 MAIL_TIME_ZONE=America/Tijuana
 RESEND_API_KEY=
 RESEND_API_URL=https://api.resend.com
@@ -141,6 +154,7 @@ Notas:
 - Usa el endpoint **pooler** de Neon en `DATABASE_URL` para la API y el directo en `DIRECT_URL`/`SHADOW_DATABASE_URL`.
 - La cookie es `HttpOnly`, `SameSite=Lax` y `Secure` solo si `NODE_ENV=production`. Configura `SESSION_COOKIE_DOMAIN` únicamente bajo HTTPS real.
 - Si no defines SMTP ni Resend, el mailer simula envíos y los registra en consola.
+- Para Gmail habilita 2FA y genera un **App Password** exclusivo; úsalo en `SMTP_PASS`. Las cuentas con autenticación normal o "Less secure apps" ya no son compatibles.
 
 ### Dashboard y Landing (Vite)
 `Landing/.env`:

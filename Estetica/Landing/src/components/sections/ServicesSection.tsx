@@ -1,6 +1,5 @@
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
-import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { usePublicServices } from "../../lib/services-store";
 
 interface ServicesSectionProps {
@@ -17,7 +16,6 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
           {Array.from({ length: 3 }).map((_, index) => (
             <Card key={index} className="luxury-card overflow-hidden rounded-2xl animate-pulse">
-              <div className="relative h-72 bg-white/5" />
               <CardContent className="p-8 space-y-4">
                 <div className="h-6 bg-white/10 rounded" />
                 <div className="h-4 bg-white/5 rounded w-3/4" />
@@ -62,36 +60,24 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
         {services.map((service, index) => {
           const highlights = service.highlights && service.highlights.length > 0 ? service.highlights : [];
-          const heroImage = service.imageUrl && service.imageUrl.length > 0 ? service.imageUrl : "/assets/unas3.jfif";
           return (
             <Card
               key={service.id}
-              className="group luxury-card luxury-hover overflow-hidden rounded-2xl"
+              className="group luxury-card overflow-hidden rounded-2xl"
               style={{ animationDelay: `${index * 100}ms` }}
             >
-              <div className="relative h-72 overflow-hidden">
-                <ImageWithFallback
-                  src={heroImage}
-                  alt={service.name}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                  loading="lazy"
-                  decoding="async"
-                  sizes="(min-width: 1024px) 320px, 90vw"
-                  width={640}
-                  height={640}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-
-                <div className="absolute top-4 right-4 bg-[#D4AF37]/90 backdrop-blur-sm rounded-full px-3 py-1">
-                  <span className="font-sans text-sm text-black font-medium">
-                    {currencyFormatter.format(service.price)} · {service.duration} min
-                  </span>
+              <CardContent className="p-8 space-y-5">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <h3 className="font-serif text-2xl text-white">{service.name}</h3>
+                    <span className="text-editorial-beige font-semibold">
+                      {currencyFormatter.format(service.price)}
+                    </span>
+                  </div>
+                  <span className="text-sm text-white/60">Duración estimada: {service.duration} min</span>
                 </div>
-              </div>
 
-              <CardContent className="p-8 space-y-4">
                 <div>
-                  <h3 className="font-serif text-2xl text-white mb-2">{service.name}</h3>
                   {service.description ? (
                     <p className="font-sans text-white/80 leading-relaxed">{service.description}</p>
                   ) : (
@@ -101,7 +87,7 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
                   )}
                 </div>
 
-                {highlights.length > 0 && (
+                {highlights.length > 0 ? (
                   <ul className="space-y-2">
                     {highlights.map((feature, idx) => (
                       <li key={idx} className="flex items-center font-sans text-sm text-white/70">
@@ -110,7 +96,7 @@ export function ServicesSection({ onNavigateToBooking }: ServicesSectionProps) {
                       </li>
                     ))}
                   </ul>
-                )}
+                ) : null}
 
                 <Button
                   onClick={() => onNavigateToBooking(service.id)}

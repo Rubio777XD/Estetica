@@ -63,6 +63,15 @@ export const localDateTimeToIso = (value: string) => {
   return zoned.toISOString();
 };
 
+export const isoToLocalInputValue = (iso: string) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return getLocalDateTimeInputValue(date);
+};
+
 export const formatLocalDateTime = (value: string) => {
   const iso = localDateTimeToIso(value);
   if (!iso) return '';

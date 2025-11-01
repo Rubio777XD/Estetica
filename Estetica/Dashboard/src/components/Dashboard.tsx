@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { CalendarDays, Clock3, MailPlus, RefreshCw, Users } from 'lucide-react';
+import { CalendarDays, Clock3, RefreshCw, Users } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -9,8 +8,6 @@ import { apiFetch } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { invalidateQuery, useApiQuery } from '../lib/data-store';
 import type { Booking, Service, StatsOverviewResponse } from '../types/api';
-import { sendTestEmail } from '../utils/email';
-import { toast } from 'sonner@2.0.3';
 
 type BookingWithService = Booking & { service: Service };
 
@@ -22,8 +19,6 @@ const STATUS_LABELS = {
 };
 
 export default function Dashboard() {
-  const [sendingTestEmail, setSendingTestEmail] = useState(false);
-  const showTestEmailButton = import.meta.env.MODE !== 'production';
   const {
     data: overview,
     status: overviewStatus,
@@ -68,33 +63,9 @@ export default function Dashboard() {
     void refetchPending();
   };
 
-  const handleSendTestEmail = async () => {
-    if (sendingTestEmail) return;
-    setSendingTestEmail(true);
-    try {
-      await sendTestEmail();
-      toast.success('Correo enviado (test) ✅');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'No fue posible enviar el correo de prueba';
-      toast.error(message);
-    } finally {
-      setSendingTestEmail(false);
-    }
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex flex-col justify-end gap-3 sm:flex-row sm:items-center">
-        {showTestEmailButton && (
-          <Button
-            onClick={handleSendTestEmail}
-            disabled={sendingTestEmail}
-            className="gap-2 rounded-full bg-black text-white shadow-sm transition hover:bg-black/90 focus-visible:ring-white/40 sm:w-auto"
-          >
-            <MailPlus className="h-4 w-4" />
-            {sendingTestEmail ? 'Enviando correo…' : 'Enviar correo de prueba'}
-          </Button>
-        )}
         <Button
           variant="outline"
           size="sm"

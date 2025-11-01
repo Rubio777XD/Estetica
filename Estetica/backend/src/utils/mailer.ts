@@ -13,6 +13,12 @@ const MAIL_FROM = process.env.MAIL_FROM || SMTP_USER || 'no-reply@localhost';
 const MAIL_TIME_ZONE = process.env.MAIL_TIME_ZONE || DEFAULT_TZ;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_API_URL = (process.env.RESEND_API_URL || 'https://api.resend.com').replace(/\/$/, '');
+const ORGANIZER_EMAIL = process.env.MAIL_ORGANIZER_EMAIL || 'mailestetica@gmail.com';
+
+const SALON_NAME = 'Studio de Belleza AR';
+const SALON_FULL_NAME = 'Studio de Belleza AR: Ibeth Rentería';
+const SALON_ADDRESS = 'Av. Miguel Hidalgo 281, Zona Centro, Tecate, B.C., México';
+const SALON_PHONE = '665 110 5558';
 
 type NodemailerModule = {
   createTransport: (config: Record<string, unknown>) => {
@@ -68,6 +74,11 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  icalEvent?: {
+    filename: string;
+    content: string;
+    method?: 'PUBLISH' | 'REQUEST' | 'CANCEL';
+  };
 }
 
 const sendViaResend = async (message: MailMessage) => {
@@ -83,6 +94,15 @@ const sendViaResend = async (message: MailMessage) => {
       subject: message.subject,
       html: message.html,
       text: message.text,
+      attachments: message.icalEvent
+        ? [
+            {
+              filename: message.icalEvent.filename,
+              content: Buffer.from(message.icalEvent.content, 'utf-8').toString('base64'),
+              content_type: 'text/calendar; method=' + (message.icalEvent.method ?? 'REQUEST'),
+            },
+          ]
+        : undefined,
     }),
   });
 
@@ -111,6 +131,13 @@ export const sendMail = async (message: MailMessage) => {
       return await mailTransporter.sendMail({
         from: MAIL_FROM,
         ...message,
+        icalEvent: message.icalEvent
+          ? {
+              filename: message.icalEvent.filename,
+              method: message.icalEvent.method ?? 'REQUEST',
+              content: message.icalEvent.content,
+            }
+          : undefined,
       });
     } catch (error) {
       console.error('[mailer] Error enviando vía SMTP', error);
@@ -138,6 +165,252 @@ const timeFormatter = new Intl.DateTimeFormat('es-MX', {
   hour: '2-digit',
   minute: '2-digit',
 });
+
+const icsDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+const formatIcsDate = (date: Date) => {
+  const parts = icsDateFormatter.formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value] as const));
+  const year = map.get('year');
+  const month = map.get('month');
+  const day = map.get('day');
+  const hour = map.get('hour');
+  const minute = map.get('minute');
+  const second = map.get('second');
+  return `${year}${month}${day}T${hour}${minute}${second}Z`;
+};
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const buildIcsContent = (options: {
+  bookingId: string;
+  clientName: string;
+  serviceName: string;
+  start: Date;
+  end: Date;
+  assignedName?: string | null;
+  assignedEmail?: string | null;
+  notes?: string | null;
+}) => {
+  const { bookingId, clientName, serviceName, start, end, assignedName, assignedEmail, notes } = options;
+  const lines: string[] = [];
+  lines.push('BEGIN:VCALENDAR');
+  lines.push('PRODID:-//Studio de Belleza AR//Confirmaciones//ES');
+  lines.push('VERSION:2.0');
+  lines.push('CALSCALE:GREGORIAN');
+  lines.push('METHOD:REQUEST');
+  lines.push('BEGIN:VEVENT');
+  lines.push(`UID:booking-${bookingId}@studio-ar`);
+  lines.push(`DTSTAMP:${formatIcsDate(new Date())}`);
+  lines.push(`DTSTART:${formatIcsDate(start)}`);
+  lines.push(`DTEND:${formatIcsDate(end)}`);
+  lines.push(`SUMMARY:Cita en ${SALON_NAME}`);
+  lines.push(
+    `DESCRIPTION:Servicio: ${serviceName}\\nCliente: ${clientName}\\nProfesional: ${
+      assignedName ? `${assignedName}${assignedEmail ? ` (${assignedEmail})` : ''}` : assignedEmail ?? 'Por asignar'
+    }${notes ? `\\nNotas: ${notes.replace(/\r?\n/g, ' ')}` : ''}`
+  );
+  lines.push(`LOCATION:${SALON_FULL_NAME} - ${SALON_ADDRESS}`);
+  lines.push(`ORGANIZER;CN=${SALON_NAME}:MAILTO:${ORGANIZER_EMAIL}`);
+  if (assignedEmail) {
+    lines.push(`ATTENDEE;CN=${assignedName ?? assignedEmail};ROLE=REQ-PARTICIPANT:MAILTO:${assignedEmail}`);
+  }
+  lines.push('STATUS:CONFIRMED');
+  lines.push('END:VEVENT');
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+};
+
+const buildGoogleCalendarUrl = (options: {
+  title: string;
+  start: Date;
+  end: Date;
+  details: string;
+}) => {
+  const { title, start, end, details } = options;
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${formatIcsDate(start)}/${formatIcsDate(end)}`,
+    details,
+    location: `${SALON_FULL_NAME} - ${SALON_ADDRESS}`,
+    ctz: MAIL_TIME_ZONE,
+  });
+  return `https://www.google.com/calendar/render?${params.toString()}`;
+};
+
+export interface BookingConfirmationEmailOptions {
+  to: string;
+  bookingId: string;
+  clientName: string;
+  serviceName: string;
+  start: Date;
+  end: Date;
+  assignedName?: string | null;
+  assignedEmail?: string | null;
+  notes?: string | null;
+}
+
+export const sendBookingConfirmationEmail = async (options: BookingConfirmationEmailOptions) => {
+  const { to, bookingId, clientName, serviceName, start, end, assignedName, assignedEmail, notes } = options;
+  const dayText = dateFormatter.format(start);
+  const startHour = timeFormatter.format(start);
+  const endHour = timeFormatter.format(end);
+  const assignedLabel = assignedName
+    ? `${assignedName}${assignedEmail ? ` (${assignedEmail})` : ''}`
+    : assignedEmail ?? 'Por asignar';
+
+  const detailsText = `Servicio: ${serviceName}. Profesional asignada: ${assignedLabel}. Teléfono del estudio: ${SALON_PHONE}.`;
+  const googleCalendarUrl = buildGoogleCalendarUrl({
+    title: `Cita en ${SALON_NAME}`,
+    start,
+    end,
+    details: `${detailsText} Dirección: ${SALON_ADDRESS}.`,
+  });
+
+  const schema = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: 'Cita en Studio de Belleza AR',
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    location: {
+      '@type': 'Place',
+      name: SALON_FULL_NAME,
+      address: SALON_ADDRESS,
+    },
+    organizer: {
+      '@type': 'Organization',
+      name: SALON_NAME,
+      email: ORGANIZER_EMAIL,
+    },
+  };
+
+  const html = `<!DOCTYPE html>
+  <html lang="es">
+    <head>
+      <meta charSet="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Confirmación de cita</title>
+      <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f9fafb; margin: 0; padding: 24px; color: #111827; }
+        .wrapper { max-width: 600px; margin: 0 auto; }
+        .card { background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12); }
+        .header { background: linear-gradient(135deg, #111827 0%, #1f2937 100%); color: #ffffff; padding: 32px 28px; }
+        .header h1 { margin: 0; font-size: 26px; font-weight: 600; }
+        .content { padding: 32px 28px; }
+        .info-card { background: #f3f4f6; border-radius: 16px; padding: 20px; margin-top: 20px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; }
+        .info-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
+        .info-value { font-size: 16px; font-weight: 600; color: #111827; }
+        .cta { display: inline-block; background: #111827; color: #ffffff; padding: 14px 28px; border-radius: 9999px; font-weight: 600; text-decoration: none; margin-top: 24px; }
+        .footer { padding: 24px 28px 32px; color: #6b7280; font-size: 13px; text-align: center; }
+      </style>
+      <script type="application/ld+json">${JSON.stringify(schema)}</script>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="card">
+          <div class="header">
+            <p style="margin: 0 0 8px 0; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7);">${SALON_FULL_NAME}</p>
+            <h1>Tu cita ha sido confirmada</h1>
+          </div>
+          <div class="content">
+            <p style="margin: 0 0 16px 0; font-size: 16px;">Hola ${escapeHtml(clientName)},</p>
+            <p style="margin: 0 0 20px 0; line-height: 1.6; font-size: 15px; color: #374151;">
+              ¡Gracias por confiar en nosotras! Te esperamos en nuestro estudio para tu servicio de belleza.
+            </p>
+            <div class="info-card">
+              <div class="info-row">
+                <span class="info-label">Servicio</span>
+                <span class="info-value">${escapeHtml(serviceName)}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Fecha y hora</span>
+                <span class="info-value">${escapeHtml(dayText)} · ${escapeHtml(startHour)} – ${escapeHtml(endHour)}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Profesional</span>
+                <span class="info-value">${escapeHtml(assignedLabel)}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Dirección</span>
+                <span class="info-value">${escapeHtml(SALON_ADDRESS)}</span>
+              </div>
+              <div class="info-row" style="margin-bottom: 0;">
+                <span class="info-label">Contacto</span>
+                <span class="info-value">Tel. ${escapeHtml(SALON_PHONE)}</span>
+              </div>
+            </div>
+            <a class="cta" href="${googleCalendarUrl}">Agregar al calendario</a>
+            <p style="margin: 24px 0 0 0; font-size: 14px; color: #4b5563; line-height: 1.5;">
+              Si necesitas reprogramar o tienes alguna duda, contáctanos al <strong>${escapeHtml(SALON_PHONE)}</strong> o responde a este correo.
+            </p>
+            ${notes ? `<p style="margin: 18px 0 0 0; font-size: 14px; color: #6b7280;">Notas adicionales: ${escapeHtml(notes)}</p>` : ''}
+          </div>
+          <div class="footer">
+            <p style="margin: 0 0 4px 0;">${SALON_FULL_NAME}</p>
+            <p style="margin: 0;">${SALON_ADDRESS}</p>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>`;
+
+  const textLines = [
+    `Hola ${clientName},`,
+    '',
+    'Tu cita fue confirmada.',
+    `Servicio: ${serviceName}.`,
+    `Fecha: ${dayText}.`,
+    `Horario: ${startHour} – ${endHour}.`,
+    `Profesional: ${assignedLabel}.`,
+    `Dirección: ${SALON_ADDRESS}.`,
+    `Teléfono: ${SALON_PHONE}.`,
+    '',
+    'Agrega el evento a tu calendario: ' + googleCalendarUrl,
+  ];
+  if (notes) {
+    textLines.push('', `Notas: ${notes}`);
+  }
+
+  const icalEventContent = buildIcsContent({
+    bookingId,
+    clientName,
+    serviceName,
+    start,
+    end,
+    assignedName,
+    assignedEmail,
+    notes,
+  });
+
+  await sendMail({
+    to,
+    subject: `Tu cita en ${SALON_NAME} - ${serviceName}`,
+    text: textLines.join('\n'),
+    html,
+    icalEvent: {
+      filename: 'cita-estudio-belleza.ics',
+      content: icalEventContent,
+      method: 'REQUEST',
+    },
+  });
+};
 
 export interface AssignmentEmailOptions {
   to: string;

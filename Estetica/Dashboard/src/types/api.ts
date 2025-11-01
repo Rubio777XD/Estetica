@@ -24,11 +24,13 @@ export interface Booking {
   notes?: string | null;
   assignedEmail?: string | null;
   assignedAt?: string | null;
+  amountOverride?: number | null;
   createdAt: string;
   updatedAt: string;
   service: Service;
   payments?: Payment[];
   assignments?: Assignment[];
+  commissions?: Commission[];
 }
 
 export interface Assignment {
@@ -48,6 +50,15 @@ export interface Payment {
   method: PaymentMethod;
   createdAt: string;
   booking?: Booking;
+}
+
+export interface Commission {
+  id: string;
+  bookingId: string;
+  percentage: number;
+  amount: number;
+  assigneeEmail?: string | null;
+  createdAt: string;
 }
 
 export interface Product {
@@ -75,6 +86,25 @@ export interface UnassignedBookingsResponse {
 export interface PaymentsResponse {
   payments: (Payment & { booking: Booking & { service: Service } })[];
   totalAmount: number;
+}
+
+export interface CommissionRow {
+  bookingId: string;
+  clientName: string;
+  serviceName: string;
+  startTime: string;
+  assignedEmail?: string | null;
+  paymentMethod?: PaymentMethod | null;
+  paymentCreatedAt?: string | null;
+  amount: number;
+  commissionAmount: number;
+  commissionPercentage: number;
+}
+
+export interface CommissionsResponse {
+  rows: CommissionRow[];
+  totalAmount: number;
+  totalCommission: number;
 }
 
 export interface ProductsResponse {

@@ -69,12 +69,14 @@ model Booking {
   notes      String?
   assignedEmail String?
   assignedAt    DateTime?
+  amountOverride Float?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
   service Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   payments Payment[]
   assignments Assignment[]
+  commissions Commission[]
 
   @@index([startTime])
   @@index([status])
@@ -93,6 +95,20 @@ model Payment {
 
   @@index([createdAt])
   @@index([method])
+}
+
+model Commission {
+  id            String   @id @default(cuid())
+  bookingId     String
+  percentage    Float
+  amount        Float
+  assigneeEmail String?
+  createdAt     DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([assigneeEmail])
 }
 
 model Product {

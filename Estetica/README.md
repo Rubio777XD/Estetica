@@ -47,14 +47,14 @@ Backend API (Express, 3000) ───────────────▶ Neo
 
 ### Dashboard (`Dashboard/`, puerto 3003)
 - Panel administrativo con guardia de sesión (`ensureSession`) y `apiFetch` centralizado que agrega `credentials:"include"` y despacha el evento `dashboard:unauthorized` ante cualquier 401.
-- Inicia un `EventSource` contra `/api/events` con `withCredentials:true` para revalidar caches (`invalidateQuery`) ante eventos `service:*`, `booking:*`, `booking:assignment:*`, `payment:*`, `payments:invalidate`, `product:*` y `stats:invalidate`.
+- Inicia un `EventSource` contra `/api/events` con `withCredentials:true` para revalidar caches (`invalidateQuery`) ante eventos `service:*`, `booking:*`, `booking:assignment:*`, `payment:*`, `payments:invalidate`, `commission:created`, `product:*` y `stats:invalidate`.
 - Secciones principales:
-  - **Dashboard:** tarjetas de métricas (`/api/stats/overview`) y gráfica de ingresos (`/api/stats/revenue`).
+  - **Dashboard:** tablero centrado con tarjetas de "Citas de hoy", "Servicios más solicitados" y resúmenes compactos de próximas y pendientes.
   - **Servicios:** CRUD optimista con validaciones de duración/precio, campo opcional `description` (máx. 500 caracteres) y auto-refetch tras SSE.
-  - **Citas próximas:** muestra programadas/confirmadas con confirmación rápida, registro de pago + cambio a realizado, edición local del monto y cancelación con modal.
+  - **Citas próximas:** listado asignado que permite confirmar, editar precio con persistencia, registrar cobro y comisión en un modal de cobro y cancelar con confirmación explícita.
+  - **Citas pendientes:** tabla paginada con columnas Cliente/Servicio/Fecha/Notas/Acciones, modal de asignación por correo, edición completa (cliente, servicio, fecha/hora, notas) con pickers nativos y cancelación con modal.
   - **Citas terminadas:** historial filtrable por rango con montos pagados (suma de `payments`).
-  - **Citas pendientes:** listado de citas sin `assignedEmail`, envío/cancelación de invitaciones, badge con vencimiento relativo y refresco en vivo cuando una invitación se acepta o expira.
-  - **Pagos & Comisiones:** registro de pagos con selección rápida de citas confirmadas/realizadas y resumen de montos.
+  - **Pagos & Comisiones:** reporte filtrable por rango, totales del periodo, totales de comisión y exportación CSV lista para Excel.
   - **Inventario:** tabla full-width, resaltado de stock bajo y CRUD optimista que sincroniza métricas.
   - **Usuarios:** disponible solo para `ADMIN`, permite invitar personal con rol y contraseña inicial.
 
@@ -64,6 +64,7 @@ Backend API (Express, 3000) ───────────────▶ Neo
 - SSE mediante `events.ts`: `/api/events` (autenticado) y `/api/public/events` para consumo sin sesión.
 - Seguridad básica: rate limiting por IP para login, normalización de notas/emails, expiración de invitaciones pendientes y limpieza periódica (intervalos en memoria).
 - Bootstrap: al arrancar garantiza un usuario administrador (`BOOTSTRAP_ADMIN_*`), crea seeds (`prisma/seed.ts`) y expone `PUBLIC_API_URL` para enlaces públicos de invitación.
+- Nuevos endpoints para cierre y comisiones: `POST /bookings/:id/complete` ejecuta la transacción pago + comisión + `status=done`, `POST /commissions` permite registrar ajustes manuales, `GET /commissions` lista el reporte y `GET /commissions/export` entrega un CSV listo para Excel. Todos disparan SSE `commission:created` o invalidaciones de pagos/estadísticas.
 
 ## Modelado de datos (Prisma)
 ### Enums
@@ -75,20 +76,23 @@ Backend API (Express, 3000) ───────────────▶ Neo
 ### Modelos clave
 - **User:** credenciales, nombre opcional y rol. Índices por correo.
 - **Service:** nombre único, precio, duración (5–480 min), `description?` (hasta 500 caracteres), highlights y relación `booking`.
-- **Booking:** referencia a `Service`, ventana `startTime`/`endTime`, estado, notas y asignación manual (`assignedEmail`, `assignedAt`).
+- **Booking:** referencia a `Service`, ventana `startTime`/`endTime`, estado, notas, campo `amountOverride?` para personalizar el monto final y asignación manual (`assignedEmail`, `assignedAt`).
 - **Payment:** pagos vinculados a `Booking`, método y timestamps.
+- **Commission:** registro calculado por cita (`percentage`, `amount`, `assigneeEmail?`, `createdAt`) vinculado a `Booking`.
 - **Product:** inventario con umbral de stock bajo.
 - **Assignment:** invitaciones por cita con `token` único, `expiresAt` y `status`.
 
 ### Relaciones (ERD textual)
 - `User` (1) ── maneja sesión y no tiene relaciones directas con otras tablas de dominio.
 - `Service` (1) ──< `Booking` (N).
-- `Booking` (1) ──< `Payment` (N) y `Assignment` (N).
+- `Booking` (1) ──< `Payment` (N), `Commission` (N) y `Assignment` (N).
 - `Assignment` pertenece a un `Booking`; al aceptar actualiza `Booking.assignedEmail/assignedAt`.
 
 ### Campos destacados
 - `Booking.assignedEmail` / `assignedAt`: reflejan quién aceptó y cuándo.
+- `Booking.amountOverride`: monto personalizado que sobrescribe el precio del servicio al registrar el cobro.
 - `Assignment.token` y `expiresAt`: tokens firmados enviados por correo, vencen tras `ASSIGNMENT_EXPIRATION_HOURS` (24 h por defecto).
+- `Commission.percentage` / `amount`: porcentaje y monto de comisión registrados cuando la cita se marca como realizada.
 
 ## Flujo de negocio clave: Citas pendientes y asignación por invitación
 1. Al crear una cita, permanece sin asignar (`assignedEmail = null`).
@@ -100,6 +104,13 @@ Backend API (Express, 3000) ───────────────▶ Neo
    - Las demás invitaciones pendientes expiran.
    - El backend emite SSE `booking:assignment:accepted` y `booking:updated` → el Dashboard refresca **Citas**, **Citas pendientes** y métricas.
 5. Si no responde en 24 h, un job interno expira las invitaciones y emite `booking:assignment:expired`, devolviendo la cita al listado "sin asignar".
+
+### Flujo Pendientes → Próximas → Terminadas
+1. Toda cita nueva entra en **Citas pendientes** (`assignedEmail = null`, `status` `scheduled`/`confirmed`).
+2. Al asignarse (aceptación de invitación o asignación manual futura), el SSE `booking:assignment:accepted` actualiza el listado y la cita aparece en **Citas próximas**.
+3. En **Citas próximas** se puede ajustar `amountOverride`, confirmar la cita o abrir el modal de cobro. Al confirmar el cobro se llama a `POST /bookings/:id/complete`, que crea el pago, registra la comisión y cambia el estado a `done` dentro de una misma transacción.
+4. Las citas completadas salen de próximas y pasan a **Citas terminadas**, actualizando métricas y el reporte de Pagos & Comisiones.
+5. Cancelar desde pendientes o próximas emite `booking:status` con `canceled`, removiendo la cita del flujo.
 
 ## Variables de entorno
 ### Backend (`backend/.env.example`)
@@ -242,6 +253,10 @@ npm run dev -- --port 3003
 |--------|------|-------------|
 | GET | `/api/payments?from=&to=` | Lista pagos (máx. 200) y total del rango.
 | POST | `/api/payments` | Registra pago (requiere cita existente).
+| POST | `/api/bookings/:id/complete` | Registra pago, comisión y marca la cita como `done` en una sola transacción.
+| POST | `/api/commissions` | Crea un registro de comisión manual asociado a una cita.
+| GET | `/api/commissions?from=&to=` | Reporte paginado de pagos y comisiones filtrado por fecha.
+| GET | `/api/commissions/export?from=&to=` | Descarga CSV listo para Excel con los mismos campos del reporte.
 
 ### Inventario
 | Método | Ruta | Descripción |

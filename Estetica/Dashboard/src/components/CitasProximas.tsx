@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   BadgeCheck,
   Calendar,
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -51,69 +52,42 @@ type PriceDialogState = {
 
 type PaymentDialogState = {
   booking: BookingWithRelations;
+  amount: string;
+  commissionPercentage: string;
   method: PaymentMethod;
 };
 
-function mergeBookings(values: BookingWithRelations[][]) {
-  const map = new Map<string, BookingWithRelations>();
-  for (const list of values) {
-    for (const booking of list) {
-      map.set(booking.id, booking);
-    }
-  }
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-  );
-}
+const computeCommissionAmount = (amount: number, percentage: number) =>
+  Math.round(amount * (percentage / 100) * 100) / 100;
 
 export default function CitasProximas() {
   const [priceDialog, setPriceDialog] = useState<PriceDialogState | null>(null);
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
   const [paymentDialog, setPaymentDialog] = useState<PaymentDialogState | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});
-  const [markingDone, setMarkingDone] = useState<Record<string, boolean>>({});
-  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
+  const [completing, setCompleting] = useState<Record<string, boolean>>({});
+  const [cancelDialog, setCancelDialog] = useState<BookingWithRelations | null>(null);
+  const [lastCommissionPct, setLastCommissionPct] = useState<number>(0);
 
   const { data: bookings = [], status, error, refetch, setData } = useApiQuery<BookingWithRelations[]>(
     UPCOMING_KEY,
     async () => {
-      const today = new Date();
-      const pad = (num: number) => String(num).padStart(2, '0');
-      const from = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-      const buildParams = (status: 'scheduled' | 'confirmed') => {
-        const params = new URLSearchParams({ status, from, limit: '200' });
-        return params.toString();
-      };
-
-      const [scheduled, confirmed] = await Promise.all([
-        apiFetch<{ bookings: BookingWithRelations[] }>(`/api/bookings?${buildParams('scheduled')}`),
-        apiFetch<{ bookings: BookingWithRelations[] }>(`/api/bookings?${buildParams('confirmed')}`),
-      ]);
-
-      return mergeBookings([scheduled.bookings, confirmed.bookings]);
+      const response = await apiFetch<{ bookings: BookingWithRelations[] }>('/api/bookings/upcoming');
+      return response.bookings.sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
     }
   );
 
-  const totalOverrideCount = useMemo(
-    () => Object.values(overrides).filter((value) => Number.isFinite(value)).length,
-    [overrides]
-  );
+  const overrideCount = bookings.filter((booking) => typeof booking.amountOverride === 'number').length;
 
-  const getAmountForBooking = (booking: BookingWithRelations) => {
-    const override = overrides[booking.id];
-    if (typeof override === 'number' && Number.isFinite(override) && override > 0) {
-      return override;
-    }
-    return booking.service.price;
-  };
+  const getAmountForBooking = (booking: BookingWithRelations) =>
+    typeof booking.amountOverride === 'number' && booking.amountOverride > 0
+      ? booking.amountOverride
+      : booking.service.price;
 
-  const updateBookingInState = (updated: BookingWithRelations | null) => {
-    setData((prev = []) => {
-      if (!updated) {
-        return prev;
-      }
-      return prev.map((item) => (item.id === updated.id ? updated : item));
-    });
+  const updateBookingInState = (updated: BookingWithRelations) => {
+    setData((prev = []) => prev.map((item) => (item.id === updated.id ? updated : item)));
   };
 
   const removeBookingFromState = (bookingId: string) => {
@@ -137,6 +111,7 @@ export default function CitasProximas() {
       updateBookingInState(updated);
       toast.success('Cita confirmada');
       invalidateQueriesMatching('bookings:');
+      invalidateQuery('bookings:upcoming:summary');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'No fue posible confirmar la cita';
       toast.error(message);
@@ -146,87 +121,138 @@ export default function CitasProximas() {
   };
 
   const handleOpenPriceDialog = (booking: BookingWithRelations) => {
-    const existing = overrides[booking.id] ?? booking.service.price;
-    setPriceDialog({ booking, value: existing.toString() });
+    const current = getAmountForBooking(booking);
+    setPriceDialog({ booking, value: current.toString() });
   };
 
-  const handleSavePriceOverride = () => {
+  const handleSavePriceOverride = async () => {
     if (!priceDialog) return;
     const amount = Number(priceDialog.value);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error('Ingresa un monto válido mayor a 0');
       return;
     }
-    setOverrides((prev) => ({ ...prev, [priceDialog.booking.id]: amount }));
-    toast.success('Monto personalizado guardado');
-    setPriceDialog(null);
+    setIsSavingPrice(true);
+    try {
+      const { booking: updated } = await apiFetch<{ booking: BookingWithRelations }>(
+        `/api/bookings/${priceDialog.booking.id}/price`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ amount }),
+        }
+      );
+      updateBookingInState(updated);
+      toast.success('Monto personalizado guardado');
+      invalidateQueriesMatching('bookings:');
+      invalidateQuery('bookings:upcoming:summary');
+      setPriceDialog(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'No fue posible actualizar el precio';
+      toast.error(message);
+    } finally {
+      setIsSavingPrice(false);
+    }
   };
 
-  const handleClearPriceOverride = () => {
+  const handleClearPriceOverride = async () => {
     if (!priceDialog) return;
-    setOverrides((prev) => {
-      const next = { ...prev };
-      delete next[priceDialog.booking.id];
-      return next;
-    });
-    toast.success('Monto restablecido al precio del servicio');
-    setPriceDialog(null);
+    setIsSavingPrice(true);
+    try {
+      const { booking: updated } = await apiFetch<{ booking: BookingWithRelations }>(
+        `/api/bookings/${priceDialog.booking.id}/price`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ amount: null }),
+        }
+      );
+      updateBookingInState(updated);
+      toast.success('Monto restablecido al precio del servicio');
+      invalidateQueriesMatching('bookings:');
+      invalidateQuery('bookings:upcoming:summary');
+      setPriceDialog(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'No fue posible restablecer el precio';
+      toast.error(message);
+    } finally {
+      setIsSavingPrice(false);
+    }
   };
 
-  const handleMarkAsDone = (booking: BookingWithRelations) => {
-    setPaymentDialog({ booking, method: 'cash' });
+  const handleOpenPaymentDialog = (booking: BookingWithRelations) => {
+    const baseAmount = getAmountForBooking(booking);
+    setPaymentDialog({
+      booking,
+      amount: baseAmount.toFixed(2),
+      commissionPercentage: lastCommissionPct.toString(),
+      method: 'cash',
+    });
   };
 
   const handleConfirmPayment = async () => {
     if (!paymentDialog) return;
     const { booking, method } = paymentDialog;
-    const amount = getAmountForBooking(booking);
+    const amount = Number(paymentDialog.amount);
+    const commissionPercentage = Number(paymentDialog.commissionPercentage);
+
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('El monto a cobrar debe ser mayor a 0');
+      toast.error('Ingresa un monto válido mayor a 0');
       return;
     }
 
-    setMarkingDone((prev) => ({ ...prev, [booking.id]: true }));
+    if (!Number.isFinite(commissionPercentage) || commissionPercentage < 0 || commissionPercentage > 100) {
+      toast.error('Ingresa un porcentaje de comisión entre 0 y 100');
+      return;
+    }
+
+    setCompleting((prev) => ({ ...prev, [booking.id]: true }));
     try {
-      await apiFetch('/api/payments', {
+      await apiFetch(`/api/bookings/${booking.id}/complete`, {
         method: 'POST',
-        body: JSON.stringify({ bookingId: booking.id, amount, method }),
-      });
-      await apiFetch(`/api/bookings/${booking.id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({
+          amount,
+          method,
+          commissionPercentage,
+        }),
       });
       toast.success('Cita marcada como realizada');
       removeBookingFromState(booking.id);
+      setLastCommissionPct(commissionPercentage);
       invalidateQueriesMatching('bookings:');
-      invalidateQuery('bookings:done');
+      invalidateQuery('bookings:upcoming:summary');
+      invalidateQuery('bookings:pending:summary');
       invalidateQueriesMatching('payments:');
-      invalidateQuery('bookings:for-payments');
+      invalidateQueriesMatching('commissions:');
+      invalidateQuery('bookings:done');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'No fue posible completar la operación';
       toast.error(message);
     } finally {
-      setMarkingDone((prev) => ({ ...prev, [booking.id]: false }));
+      setCompleting((prev) => ({ ...prev, [booking.id]: false }));
       setPaymentDialog(null);
     }
   };
 
-  const handleCancelBooking = async (booking: BookingWithRelations) => {
-    setCancelling((prev) => ({ ...prev, [booking.id]: true }));
+  const handleRequestCancel = (booking: BookingWithRelations) => {
+    setCancelDialog(booking);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelDialog) return;
+    const booking = cancelDialog;
     try {
       await apiFetch(`/api/bookings/${booking.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'canceled' }),
       });
-      removeBookingFromState(booking.id);
       toast.success('Cita cancelada');
+      removeBookingFromState(booking.id);
       invalidateQueriesMatching('bookings:');
-      invalidateQuery('bookings:pending');
+      invalidateQuery('bookings:pending:summary');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'No fue posible cancelar la cita';
       toast.error(message);
     } finally {
-      setCancelling((prev) => ({ ...prev, [booking.id]: false }));
+      setCancelDialog(null);
     }
   };
 
@@ -235,18 +261,17 @@ export default function CitasProximas() {
     const statusVariant = STATUS_VARIANTS[booking.status as 'scheduled' | 'confirmed'];
     const amount = getAmountForBooking(booking);
     const isConfirming = confirming[booking.id];
-    const isMarking = markingDone[booking.id];
-    const isCancelling = cancelling[booking.id];
-    const hasOverride = overrides[booking.id] !== undefined;
+    const isCompleting = completing[booking.id];
+    const hasOverride = typeof booking.amountOverride === 'number' && booking.amountOverride > 0;
 
     return (
       <Card key={booking.id} className="border border-gray-200 shadow-sm">
         <CardHeader className="flex flex-row items-start justify-between space-y-0">
-          <div>
+          <div className="space-y-1">
             <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
               <User className="h-5 w-5 text-gray-500" /> {booking.clientName}
             </CardTitle>
-            <p className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+            <p className="text-sm text-gray-500 flex items-center gap-2">
               <Calendar className="h-4 w-4" /> {formatDateTime(booking.startTime)}
             </p>
           </div>
@@ -298,10 +323,10 @@ export default function CitasProximas() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleMarkAsDone(booking)}
-              disabled={isMarking}
+              onClick={() => handleOpenPaymentDialog(booking)}
+              disabled={isCompleting}
             >
-              {isMarking ? (
+              {isCompleting ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
                 <BadgeCheck className="h-4 w-4 mr-2" />
@@ -311,18 +336,8 @@ export default function CitasProximas() {
             <Button variant="outline" size="sm" onClick={() => handleOpenPriceDialog(booking)}>
               <Pencil className="h-4 w-4 mr-2" /> Editar precio
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => handleCancelBooking(booking)}
-              disabled={isCancelling}
-            >
-              {isCancelling ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <XCircle className="h-4 w-4 mr-2" />
-              )}
-              Cancelar
+            <Button variant="destructive" size="sm" onClick={() => handleRequestCancel(booking)}>
+              <XCircle className="h-4 w-4 mr-2" /> Cancelar
             </Button>
           </div>
         </CardContent>
@@ -365,7 +380,7 @@ export default function CitasProximas() {
         <div className="border border-dashed rounded-lg p-10 text-center space-y-3">
           <p className="text-base font-medium text-gray-800">No hay citas próximas</p>
           <p className="text-sm text-gray-500">
-            Las citas confirmadas o programadas aparecerán aquí para facilitar su seguimiento.
+            Las citas confirmadas o programadas aparecerán aquí cuando sean asignadas.
           </p>
         </div>
       );
@@ -380,7 +395,7 @@ export default function CitasProximas() {
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Citas próximas</h2>
           <p className="text-sm text-gray-500">
-            Gestiona las citas programadas y confirma el pago una vez finalizadas. {totalOverrideCount > 0 ? `${totalOverrideCount} citas con monto editado.` : ''}
+            Gestiona las citas asignadas y registra el cobro al completarlas. {overrideCount > 0 ? `${overrideCount} citas con monto editado.` : ''}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
@@ -390,7 +405,7 @@ export default function CitasProximas() {
 
       {renderContent()}
 
-      <Dialog open={priceDialog !== null} onOpenChange={(open) => !open && setPriceDialog(null)}>
+      <Dialog open={priceDialog !== null} onOpenChange={(open) => !open && !isSavingPrice && setPriceDialog(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar precio</DialogTitle>
@@ -413,20 +428,23 @@ export default function CitasProximas() {
                       prev ? { ...prev, value: event.target.value } : prev
                     )
                   }
+                  disabled={isSavingPrice}
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   Precio del servicio: {formatCurrency(priceDialog.booking.service.price)}
                 </p>
               </div>
               <DialogFooter className="flex flex-col sm:flex-row sm:justify-between gap-2">
-                <Button variant="ghost" onClick={handleClearPriceOverride}>
+                <Button variant="ghost" onClick={handleClearPriceOverride} disabled={isSavingPrice}>
                   Restablecer precio del servicio
                 </Button>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setPriceDialog(null)}>
+                  <Button variant="outline" onClick={() => !isSavingPrice && setPriceDialog(null)} disabled={isSavingPrice}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleSavePriceOverride}>Guardar</Button>
+                  <Button onClick={handleSavePriceOverride} disabled={isSavingPrice}>
+                    {isSavingPrice ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar'}
+                  </Button>
                 </div>
               </DialogFooter>
             </div>
@@ -437,30 +455,45 @@ export default function CitasProximas() {
       <Dialog open={paymentDialog !== null} onOpenChange={(open) => !open && setPaymentDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Registrar pago</DialogTitle>
+            <DialogTitle>Registrar cobro</DialogTitle>
             <DialogDescription>
-              Confirma el pago y marca la cita como realizada. Podrás elegir el método de pago utilizado.
+              Confirma el pago, la comisión y marca la cita como realizada.
             </DialogDescription>
           </DialogHeader>
           {paymentDialog ? (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="payment-amount">Monto a registrar</Label>
-                <Input
-                  id="payment-amount"
-                  value={formatCurrency(getAmountForBooking(paymentDialog.booking))}
-                  readOnly
-                  className="bg-gray-50"
-                />
-                {overrides[paymentDialog.booking.id] !== undefined ? (
-                  <p className="text-xs text-amber-600">
-                    Se usará el monto personalizado definido para esta cita.
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    Se usará el precio configurado en el servicio.
-                  </p>
-                )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="payment-amount">Monto a cobrar</Label>
+                  <Input
+                    id="payment-amount"
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    value={paymentDialog.amount}
+                    onChange={(event) =>
+                      setPaymentDialog((prev) =>
+                        prev ? { ...prev, amount: event.target.value } : prev
+                      )
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="commission-percentage">% comisión</Label>
+                  <Input
+                    id="commission-percentage"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={paymentDialog.commissionPercentage}
+                    onChange={(event) =>
+                      setPaymentDialog((prev) =>
+                        prev ? { ...prev, commissionPercentage: event.target.value } : prev
+                      )
+                    }
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -484,18 +517,46 @@ export default function CitasProximas() {
                 </Select>
               </div>
 
+              {(() => {
+                const amountValue = Number(paymentDialog.amount);
+                const commissionPct = Number(paymentDialog.commissionPercentage);
+                if (!Number.isFinite(amountValue) || !Number.isFinite(commissionPct)) {
+                  return null;
+                }
+                const commissionAmount = computeCommissionAmount(amountValue, commissionPct);
+                return (
+                  <p className="text-sm text-gray-600">
+                    Esta cita se cobró {formatCurrency(amountValue)}. Comisión: {formatCurrency(commissionAmount)} ({commissionPct}%).
+                  </p>
+                );
+              })()}
+
               <DialogFooter className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setPaymentDialog(null)}>
                   Cancelar
                 </Button>
                 <Button onClick={handleConfirmPayment}>
-                  Registrar pago y completar cita
+                  Completar cobro
                 </Button>
               </DialogFooter>
             </div>
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={cancelDialog !== null} onOpenChange={(open) => !open && setCancelDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Seguro que quieres cancelar? Esta acción no se puede deshacer.</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setCancelDialog(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmCancel}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

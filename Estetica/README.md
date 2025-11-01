@@ -1,259 +1,348 @@
-# Estética – Landing, Dashboard y API con sesión por cookie HttpOnly
+# Estética Platform – Landing, Dashboard y API sincronizados
 
-## Arquitectura
-- **Landing (`Landing/`, puerto 3001 en dev):** sitio público optimizado para performance. Redirige al Dashboard tras un login satisfactorio, detecta la cookie `salon_auth` para mostrar el botón **"Ir al Dashboard"** y respeta la query `?auth=dev` para redirigir automáticamente sin reloguear.
-- **Dashboard (`Dashboard/`, puerto 3003 en dev):** panel interno con guard de sesión. Consume la API mediante el helper `apiFetch` (incluye cookies y maneja 401 redirigiendo a la Landing).
-- **API (`backend/`, puerto 3000):** Express + Prisma sobre PostgreSQL. La cookie HttpOnly (`salon_auth` por defecto) es la fuente de verdad; si existe un header `Authorization` se acepta para compatibilidad pero se prioriza la cookie. Al arrancar valida que exista al menos un administrador (`BOOTSTRAP_ADMIN_EMAIL`) y crea uno con contraseña temporal si es necesario. En producción se sirve detrás de un proxy bajo el mismo dominio (`/api`).
+Solución integral para administrar agendas, servicios y colaboradoras de un salón de belleza con landing pública, panel interno y API segura.
+
+Plataforma pensada para equipos de estética que necesitan captar clientes desde la landing, operar citas y pagos en tiempo real y coordinar colaboradoras vía invitaciones temporales.
+
+## Tabla de contenidos
+- [Arquitectura (alto nivel)](#arquitectura-alto-nivel)
+- [Módulos del sistema](#modulos-del-sistema)
+- [Modelado de datos (Prisma)](#modelado-de-datos-prisma)
+- [Flujo de negocio clave: Citas pendientes y asignación por invitación](#flujo-de-negocio-clave-citas-pendientes-y-asignacion-por-invitacion)
+- [Variables de entorno](#variables-de-entorno)
+- [Instalación y arranque (desarrollo)](#instalacion-y-arranque-desarrollo)
+- [API (referencia rápida)](#api-referencia-rapida)
+- [Ejemplos prácticos (Thunder Client / cURL)](#ejemplos-practicos-thunder-client--curl)
+- [Estándares de UI del Dashboard](#estandares-de-ui-del-dashboard)
+- [CORS, cookies y seguridad](#cors-cookies-y-seguridad)
+- [Despliegue (producción)](#despliegue-produccion)
+- [Troubleshooting](#troubleshooting)
+- [Pruebas manuales recomendadas](#pruebas-manuales-recomendadas)
+- [Contribución y scripts útiles](#contribucion-y-scripts-utiles)
+- [Roadmap y estado](#roadmap-y-estado)
+- [Licencia y contacto](#licencia-y-contacto)
+
+## Arquitectura (alto nivel)
+```
+Landing (Vite React, 3001)
+    │
+    ▼
+Dashboard (Vite React, 3003)
+    │  REST + cookie HttpOnly `salon_auth`
+    │  SSE `/api/events`
+    ▼
+Backend API (Express, 3000) ───────────────▶ Neon/PostgreSQL
+```
+- Comunicación principal vía REST autenticado. El backend emite la cookie HttpOnly `salon_auth` (nombre configurable) y acepta el mismo token por header `Authorization` como respaldo.
+- CORS permite orígenes `http://localhost:3001` y `http://localhost:3003` en desarrollo; en producción se recomienda servir todo bajo el mismo dominio y proxy reverso.
+- Streaming en tiempo real con Server-Sent Events autenticados (`/api/events`) para invalidar datos de servicios, citas, inventario, pagos y métricas.
+- Roles soportados: `ADMIN` y `EMPLOYEE`, mapeados al enum `Role` del esquema Prisma.
+
+## Módulos del sistema
+### Landing (`Landing/`, puerto 3001)
+- Landing React (Vite) que consume `/api/public/services` para renderizar catálogo e inicia sesión mediante un modal ligero.
+- Detecta la cookie de sesión al montar (`fetchMe`) y habilita el botón **Ir al Dashboard**; si la URL incluye `?auth=dev`, redirige automáticamente al panel tras validar la sesión.
+- Permite login rápido (`/api/login`) con `credentials:"include"`, cierre de sesión (`/api/logout`) y navegación suave entre secciones lazy-loaded.
+
+### Dashboard (`Dashboard/`, puerto 3003)
+- Panel administrativo con guardia de sesión (`ensureSession`) y `apiFetch` centralizado que agrega `credentials:"include"` y despacha el evento `dashboard:unauthorized` ante cualquier 401.
+- Inicia un `EventSource` contra `/api/events` con `withCredentials:true` para revalidar caches (`invalidateQuery`) ante eventos `service:*`, `booking:*`, `booking:assignment:*`, `payment:*`, `payments:invalidate`, `product:*` y `stats:invalidate`.
+- Secciones principales:
+  - **Dashboard:** tarjetas de métricas (`/api/stats/overview`) y gráfica de ingresos (`/api/stats/revenue`).
+  - **Servicios:** CRUD optimista con validaciones de duración/precio y auto-refetch tras SSE.
+  - **Citas:** filtros por rango (hoy/semana/todas) y estado, ediciones con recomputo `endTime`, cambios de estado y borrado con retroalimentación visual.
+  - **Citas pendientes:** listado de citas sin `assignedEmail`, envío/cancelación de invitaciones, badge con vencimiento relativo y refresco en vivo cuando una invitación se acepta o expira.
+  - **Pagos & Comisiones:** registro de pagos con selección rápida de citas confirmadas/realizadas y resumen de montos.
+  - **Inventario:** tabla full-width, resaltado de stock bajo y CRUD optimista que sincroniza métricas.
+  - **Usuarios:** disponible solo para `ADMIN`, permite invitar personal con rol y contraseña inicial.
+
+### Backend (`backend/`, puerto 3000)
+- API Express + Prisma. Middleware `authJWT` lee la cookie `salon_auth` (o `SESSION_COOKIE_NAME`) y valida JWT (`JWT_SECRET`).
+- `index.ts` centraliza rutas REST, validaciones con Zod y control de errores consistente (`HttpError`).
+- SSE mediante `events.ts`: `/api/events` (autenticado) y `/api/public/events` para consumo sin sesión.
+- Seguridad básica: rate limiting por IP para login, normalización de notas/emails, expiración de invitaciones pendientes y limpieza periódica (intervalos en memoria).
+- Bootstrap: al arrancar garantiza un usuario administrador (`BOOTSTRAP_ADMIN_*`), crea seeds (`prisma/seed.ts`) y expone `PUBLIC_API_URL` para enlaces públicos de invitación.
+
+## Modelado de datos (Prisma)
+### Enums
+- `Role`: `ADMIN`, `EMPLOYEE`.
+- `BookingStatus`: `scheduled`, `confirmed`, `done`, `canceled`.
+- `PaymentMethod`: `cash`, `transfer`.
+- `AssignmentStatus`: `pending`, `accepted`, `declined`, `expired`.
+
+### Modelos clave
+- **User:** credenciales, nombre opcional y rol. Índices por correo.
+- **Service:** nombre único, precio, duración, descripciones, highlights y relación `booking`.
+- **Booking:** referencia a `Service`, ventana `startTime`/`endTime`, estado, notas y asignación manual (`assignedEmail`, `assignedAt`).
+- **Payment:** pagos vinculados a `Booking`, método y timestamps.
+- **Product:** inventario con umbral de stock bajo.
+- **Assignment:** invitaciones por cita con `token` único, `expiresAt` y `status`.
+
+### Relaciones (ERD textual)
+- `User` (1) ── maneja sesión y no tiene relaciones directas con otras tablas de dominio.
+- `Service` (1) ──< `Booking` (N).
+- `Booking` (1) ──< `Payment` (N) y `Assignment` (N).
+- `Assignment` pertenece a un `Booking`; al aceptar actualiza `Booking.assignedEmail/assignedAt`.
+
+### Campos destacados
+- `Booking.assignedEmail` / `assignedAt`: reflejan quién aceptó y cuándo.
+- `Assignment.token` y `expiresAt`: tokens firmados enviados por correo, vencen tras `ASSIGNMENT_EXPIRATION_HOURS` (24 h por defecto).
+
+## Flujo de negocio clave: Citas pendientes y asignación por invitación
+1. Al crear una cita, permanece sin asignar (`assignedEmail = null`).
+2. En la vista **Citas pendientes**, el usuario ingresa un correo y dispara `POST /api/assignments` → crea invitación (`status: pending`, expira en 24 h) y envía correo con enlace `/api/assignments/accept?token=...`.
+3. La tarjeta muestra badge "vence en X" mientras la invitación sigue vigente. Se puede cancelar (`DELETE /api/assignments/:id`), quedando `declined`.
+4. Si la colaboradora acepta el enlace:
+   - `Assignment` pasa a `accepted`.
+   - `Booking.assignedEmail` y `assignedAt` se completan.
+   - Las demás invitaciones pendientes expiran.
+   - El backend emite SSE `booking:assignment:accepted` y `booking:updated` → el Dashboard refresca **Citas**, **Citas pendientes** y métricas.
+5. Si no responde en 24 h, un job interno expira las invitaciones y emite `booking:assignment:expired`, devolviendo la cita al listado "sin asignar".
 
 ## Variables de entorno
-### Backend (`backend/.env`)
+### Backend (`backend/.env.example`)
 ```env
 PORT=3000
-DATABASE_URL=postgresql://USER:PASSWORD@HOST-POOLER/DATABASE
-DIRECT_URL=postgresql://USER:PASSWORD@HOST/DATABASE
+DATABASE_URL=postgresql://USER:PASSWORD@HOST-POOLER/estetica_dev
+DIRECT_URL=postgresql://USER:PASSWORD@HOST/estetica_dev
 SHADOW_DATABASE_URL=postgresql://USER:PASSWORD@HOST/estetica_shadow
-JWT_SECRET=clave_super_segura
+JWT_SECRET=super_clave_segura
 SESSION_COOKIE_NAME=salon_auth
-SESSION_COOKIE_DOMAIN= # opcional, establece el dominio en producción
-BOOTSTRAP_ADMIN_EMAIL=admin@local.dev # opcional
-BOOTSTRAP_ADMIN_NAME=Administrador Autogenerado # opcional
-BOOTSTRAP_ADMIN_PASSWORD= # opcional (aleatoria si se omite)
-PUBLIC_API_URL=http://localhost:3000 # URL pública para enlaces de invitación
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=usuario@example.com
-SMTP_PASS=super_secreta
-SMTP_SECURE=false # opcional (usa true o puerto 465 para TLS implícito)
-MAIL_FROM="JR Studio <no-reply@example.com>" # opcional
-MAIL_TIME_ZONE=America/Tijuana # opcional, formato TZ IANA
-RESEND_API_KEY= # opcional, usa API HTTP de Resend en vez de SMTP
-RESEND_API_URL=https://api.resend.com # opcional
+SESSION_COOKIE_DOMAIN=
+PUBLIC_API_URL=http://localhost:3000
+PUBLIC_LANDING_URL=http://localhost:3001
+PUBLIC_DASHBOARD_URL=http://localhost:3003
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASS=
+SMTP_SECURE=false
+MAIL_FROM="JR Studio <no-reply@example.com>"
+MAIL_TIME_ZONE=America/Tijuana
+RESEND_API_KEY=
+RESEND_API_URL=https://api.resend.com
+ASSIGNMENT_EXPIRATION_HOURS=24
 ```
-- En desarrollo la cookie se emite con `Secure=false`, `SameSite=Lax` y `HttpOnly=true`. En producción el proxy debe estar en HTTPS para habilitar `Secure=true`.
-- `DATABASE_URL` usa el pooler de Neon para las conexiones de la API; `DIRECT_URL` y `SHADOW_DATABASE_URL` usan el endpoint directo (sin `-pooler`).
-- `estetica_shadow` debe existir en Neon y permanecer vacía (sólo la usa Prisma para la shadow database durante `migrate dev`).
-- Si las variables SMTP no se configuran, los correos se registran en consola (modo mock) pero no se envían.
-  - Alternativamente, define `RESEND_API_KEY` para enviar correos mediante la API de Resend.
+Notas:
+- Usa el endpoint **pooler** de Neon en `DATABASE_URL` para la API y el directo en `DIRECT_URL`/`SHADOW_DATABASE_URL`.
+- La cookie es `HttpOnly`, `SameSite=Lax` y `Secure` solo si `NODE_ENV=production`. Configura `SESSION_COOKIE_DOMAIN` únicamente bajo HTTPS real.
+- Si no defines SMTP ni Resend, el mailer simula envíos y los registra en consola.
 
-### Dashboard (`Dashboard/.env`)
-```env
-VITE_API_URL=http://localhost:3000
-VITE_PUBLIC_LANDING_URL=http://localhost:3001
-```
-
-### Landing (`Landing/.env`)
+### Dashboard y Landing (Vite)
+`Landing/.env`:
 ```env
 VITE_API_URL=http://localhost:3000
 VITE_PUBLIC_DASHBOARD_URL=http://localhost:3003
 ```
-
-## Base de datos y Prisma
-Modelos principales (ver `backend/prisma/schema.prisma`):
-- **Service:** `id`, `name`, `price`, `duration`, `description?`, `imageUrl?`, `highlights[]`, `createdAt`, `updatedAt`.
-- **Booking:** `id`, `clientName`, `serviceId`, `startTime`, `endTime`, `status`, `notes`, `assignedEmail?`, `assignedAt?`, `createdAt`, `updatedAt`, relación con `assignments[]` y `payments[]`.
-- **Payment:** `id`, `bookingId`, `amount`, `method` (`cash`, `transfer`), `createdAt`.
-- **Product:** `id`, `name`, `price`, `stock`, `lowStockThreshold`, `createdAt`, `updatedAt`.
-- **Assignment:** historial de invitaciones a colaboradoras (`id`, `bookingId`, `email`, `status` `pending|accepted|declined|expired`, `token`, `expiresAt`, `createdAt`, `updatedAt`).
-- **User:** credenciales para login administrativo (seed crea `admin@estetica.mx`). Roles permitidos: `ADMIN`, `EMPLOYEE`.
-
-### Migraciones y seed
-```bash
-cd backend
-npm install
-npm run prisma:migrate      # aplica migraciones (usa DATABASE_URL)
-npm run prisma:reset        # reinicia la base (usa SHADOW_DATABASE_URL) - sólo en entornos de desarrollo
-npm run prisma:seed         # inserta datos demo (servicios, citas, pagos, productos)
+`Dashboard/.env`:
+```env
+VITE_API_URL=http://localhost:3000
+VITE_PUBLIC_LANDING_URL=http://localhost:3001
 ```
-- **Reset rápido:** `npm run prisma:reset` (borra y recrea la BD, vuelve a ejecutar el seed). No lo utilices en producción.
-- El seed crea: 5 servicios, 7 citas recientes repartidas por estado, 2 pagos y 4 productos (3 de ellos en stock bajo).
+En producción, apunta estas URLs al dominio público (sin slash final). Habilita `Secure=true` en la cookie solo tras publicar bajo HTTPS.
 
-### Cómo aplicar migraciones con Neon (baseline + shadow)
+## Instalación y arranque (desarrollo)
+### Requisitos
+- Node.js ≥ 18 (para `fetch` nativo y Vite).
+- npm 9+ (o pnpm/yarn equivalentes).
+- Cuenta en Neon con dos bases: `estetica_dev` y `estetica_shadow` (vacía).
 
-1. **Pre-requisitos**
-   - Crea manualmente la base de datos vacía `estetica_shadow` en el proyecto de Neon.
-   - Configura las variables en `backend/.env`:
-     - `DATABASE_URL`: endpoint con `-pooler` apuntando a `estetica_dev`.
-     - `DIRECT_URL`: endpoint directo (sin `-pooler`) a `estetica_dev`.
-     - `SHADOW_DATABASE_URL`: endpoint directo a `estetica_shadow` (debe permanecer vacía).
-
-2. **Generar/actualizar la baseline**
-   - En macOS/Linux: `npm run prisma:baseline` (verifica que `DIRECT_URL` y `SHADOW_DATABASE_URL` estén definidos).
-   - En Windows (PowerShell): `npm run prisma:baseline:ps`.
-   - Ambos scripts crean `prisma/migrations/<timestamp>_baseline/migration.sql` utilizando `prisma migrate diff --from-empty --to-url "$DIRECT_URL" --script`.
-   - Después de generarla, marca la baseline como aplicada en la base existente: `npx prisma migrate resolve --applied <timestamp>_baseline`.
-
-3. **Aplicar migraciones en desarrollo**
-   - `npm run prisma:migrate` aplica migraciones nuevas usando el pooler.
-   - `npm run prisma:reset` recrea la base (usa la shadow), ejecuta todas las migraciones y vuelve a correr el seed. Úsalo solo en entornos locales.
-
-4. **Semillas**
-   - `npm run prisma:seed` ejecuta `prisma/seed.ts` contra la base definida en `DATABASE_URL`.
-
-#### FAQ
-- **P3006 / P1014 (tabla o enum inexistente en la shadow):** asegúrate de que `SHADOW_DATABASE_URL` apunte a `estetica_shadow` vacía y que exista la baseline con el esquema completo.
-- **`--to-url` en PowerShell no respeta variables:** utiliza `npm run prisma:baseline:ps`, que valida `DIRECT_URL` y pasa la URL literal a Prisma.
-- **¿Puedo ejecutar `prisma migrate reset` en producción?** No; borra la base. Usa únicamente los comandos de despliegue (`prisma migrate deploy`) en entornos con datos reales.
-
-## Puesta en marcha en desarrollo
+### Paso a paso
 ```bash
 # Backend
 cd backend
-npm run dev
+npm install
 
-# Landing
-cd ../Landing
+# Generar baseline inicial (Neon)
+# crea prisma/migrations/YYYYMMDDHHMMSS_baseline/migration.sql
+npm run prisma:baseline
+# o en PowerShell: npm run prisma:baseline:ps
+
+# Marca la baseline como aplicada en la base actual
+npx prisma migrate resolve --applied <timestamp_baseline>
+
+# Ejecuta migraciones y genera cliente
+npm run prisma:migrate
+
+# (Opcional) seed demo
+npm run prisma:seed
+
+# Servidor API (http://localhost:3000)
+npm run dev
+```
+En otra terminal:
+```bash
+# Landing (http://localhost:3001)
+cd Landing
 npm install
 npm run dev -- --port 3001
 
-# Dashboard
+# Dashboard (http://localhost:3003)
 cd ../Dashboard
 npm install
 npm run dev -- --port 3003
 ```
-- El backend expone CORS sólo para `http://localhost:3001` y `http://localhost:3003` con `credentials: true`.
-- Al iniciar el backend verás logs `[bootstrap] administrador creado` si se generó uno nuevo; la contraseña temporal se imprime una única vez.
-- El Dashboard redirige a la Landing si cualquier petición devuelve 401 (`apiFetch` emite el evento `dashboard:unauthorized`).
 
-## Endpoints principales
-Todas las respuestas son JSON y requieren sesión (excepto `/api/health`, `/api/login` y `/api/logout`). Validaciones con Zod. Cada
-respuesta exitosa sigue el sobre `{ success, message, data }` y replica las propiedades históricas (`services`, `bookings`, etc.)
-para compatibilidad con los clientes existentes.
+### Tabla de puertos
+| Servicio   | Ruta local                      | Descripción |
+|------------|---------------------------------|-------------|
+| Backend    | http://localhost:3000           | API Express/SSE |
+| Landing    | http://localhost:3001           | Sitio público |
+| Dashboard  | http://localhost:3003           | Panel interno |
 
-### Público
-- `GET /api/public/services` → Catálogo abierto ordenado por nombre. Incluye descripción, duración (minutos), precio y
-  `highlights[]` para renderizar la landing.
-- `GET /api/public/events` → Stream SSE (Server-Sent Events) sin autenticación que emite `service:created|updated|deleted` para
-  invalidar datos en el cliente público.
+> ⚠️ No ejecutes `prisma migrate reset` en producción: borra la base completa. Usa solo `prisma migrate deploy` en entornos con datos reales.
 
+## API (referencia rápida)
 ### Autenticación
-- `POST /api/login` → Body `{ email, password }`. Devuelve `{ token }` (sólo informativo) y envía cookie HttpOnly. Rate limit: 5 intentos/IP/min.
-- `GET /api/me` → `{ user: { id, email, name, role } }` o 401.
-- `POST /api/logout` → 204 y limpia la cookie.
-- `GET /api/health` → público.
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/login` | Genera cookie HttpOnly y devuelve `{ token }` informativo.
+| GET | `/api/me` | Devuelve usuario autenticado.
+| POST | `/api/logout` | Elimina cookie.
+| GET | `/api/health` | Ping de estado.
 
 ### Servicios
+`GET /api/public/services` (sin sesión) lista servicios públicos.
+
 | Método | Ruta | Descripción |
-| ------ | ---- | ----------- |
-| GET | `/api/services` | Lista ordenada por nombre. |
-| POST | `/api/services` | Crea servicio. Body: `{ name, price, duration }`. |
-| PUT | `/api/services/:id` | Actualiza servicio. |
-| DELETE | `/api/services/:id` | Elimina servicio (409 si hay citas asociadas). |
+|--------|------|-------------|
+| GET | `/api/services` | Lista completa (requiere sesión).
+| POST | `/api/services` | Crea servicio (Zod valida nombre, precio y duración).
+| PUT | `/api/services/:id` | Actualiza.
+| DELETE | `/api/services/:id` | Borra (protege contra servicios con citas).
 
-### Citas (Bookings)
-- `GET /api/bookings?from=YYYY-MM-DD&to=YYYY-MM-DD&status=scheduled|confirmed|done|canceled&limit=200`
-  - Filtra por rango (en zona `America/Tijuana`) y estado. Devuelve `{ bookings: Booking[] }` con `service` y `payments` embebidos.
-- `GET /api/bookings/unassigned` → Sólo citas sin `assignedEmail`. Incluye el servicio y las últimas invitaciones (`assignments`) ordenadas de forma descendente.
-- `POST /api/bookings`
-  ```json
-  {
-    "clientName": "María López",
-    "serviceId": "svc_123",
-    "startTime": "2025-03-15T17:00:00.000-08:00",
-    "notes": "Prefiere esmalte rojo"
-  }
-  ```
-  Calcula `endTime` usando la duración del servicio y crea con estado `scheduled`.
-- `PUT /api/bookings/:id` → Actualiza cliente, servicio, fecha/hora y notas (recalcula `endTime`).
-- `PATCH /api/bookings/:id/status` → Body `{ status }` con los valores del enum.
-- `DELETE /api/bookings/:id` → Borra la cita.
-- Cada cita incluye `assignedEmail` y `assignedAt` para reflejar si alguna colaboradora aceptó la invitación más reciente.
+### Citas
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/bookings?from=&to=&status=&limit=` | Filtra por fecha, estado y límite (default 100). Expira invitaciones vencidas antes de responder.
+| GET | `/api/bookings/unassigned` | Citas sin `assignedEmail`, con últimas 5 invitaciones.
+| POST | `/api/bookings` | Crea cita, recalculando `endTime` según duración del servicio.
+| PUT | `/api/bookings/:id` | Actualiza cita (incluye estado opcional).
+| PATCH | `/api/bookings/:id/status` | Cambia estado puntual.
+| DELETE | `/api/bookings/:id` | Elimina cita.
 
-### Asignaciones de colaboradoras
-- `POST /api/assignments` → Body `{ bookingId, email }`. Crea una invitación (estado `pending`) con vencimiento a 24 h, envía correo y emite SSE `booking:assignment:sent`.
-- `DELETE /api/assignments/:id` → Marca la invitación como `declined` (cancelada) y emite `booking:assignment:cancelled`.
-- `GET /api/assignments/accept?token=...` → Endpoint público que valida el token, marca la invitación como `accepted`, asigna la cita (`assignedEmail`/`assignedAt`) y expira otras invitaciones.
+### Invitaciones y asignaciones
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/assignments` | Crea invitación con vencimiento (24 h por defecto).
+| DELETE | `/api/assignments/:id` | Marca invitación como `declined`.
+| GET | `/api/assignments/accept?token=` | Endpoint público para aceptación; actualiza cita y emite SSE.
 
 ### Pagos
-- `GET /api/payments?from=&to=` → Devuelve `{ payments: [...], totalAmount }`. Cada pago incluye `booking.service` para mostrar contexto.
-- `POST /api/payments` → Body `{ bookingId, amount, method }`. Permite múltiples pagos por cita.
-
-### Inventario (Products)
 | Método | Ruta | Descripción |
-| ------ | ---- | ----------- |
-| GET | `/api/products` | Lista completa. |
-| GET | `/api/products/low-stock` | Productos con `stock <= lowStockThreshold`. |
-| POST | `/api/products` | Crea producto `{ name, price, stock, lowStockThreshold }`. |
-| PUT | `/api/products/:id` | Actualiza cantidades/precio. |
-| DELETE | `/api/products/:id` | Borra producto. |
+|--------|------|-------------|
+| GET | `/api/payments?from=&to=` | Lista pagos (máx. 200) y total del rango.
+| POST | `/api/payments` | Registra pago (requiere cita existente).
 
-### Tiempo real
-- `GET /api/events` → SSE autenticado (`withCredentials`). Emite `service:*`, `booking:*`, `booking:assignment:*`, `payment:created`,
-  `payments:invalidate`, `product:*` y `stats:invalidate` para que el dashboard refresque automáticamente queries y métricas.
-
-### Usuarios (sólo ADMIN)
+### Inventario
 | Método | Ruta | Descripción |
-| ------ | ---- | ----------- |
-| GET | `/api/users` | Lista usuarios registrados con rol y fecha de creación. |
-| POST | `/api/users` | Crea usuario `{ email, password, role, name? }`. Valida duplicados y asigna roles `ADMIN` o `EMPLOYEE`. |
+|--------|------|-------------|
+| GET | `/api/products` | Lista inventario.
+| GET | `/api/products/low-stock` | Solo productos en o bajo umbral.
+| POST | `/api/products` | Crea producto.
+| PUT | `/api/products/:id` | Actualiza precio/stock/umbral.
+| DELETE | `/api/products/:id` | Elimina producto.
 
-### Métricas
-- `GET /api/stats/overview` →
-  ```json
-  {
-    "todayBookings": { "scheduled": 2, "confirmed": 1, "done": 3, "canceled": 1 },
-    "monthlyRevenue": 1100,
-    "topServices": [ { "serviceId": "...", "name": "Extensión clásica", "count": 4 } ],
-    "lowStockProducts": 3
-  }
-  ```
-- `GET /api/stats/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD` → `{ series: [{ date: ISOString, amount }] }` para gráficas diarias.
+### Métricas y usuarios
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/stats/overview` | Conteos del día, ingresos del mes, top servicios y stock bajo.
+| GET | `/api/stats/revenue?from=&to=` | Serie diaria de ingresos.
+| GET | `/api/users` | Solo ADMIN. Lista usuarios.
+| POST | `/api/users` | Solo ADMIN. Alta de usuario con rol.
 
-## Dashboard: módulos y revalidación
-- **Servicios:** CRUD en modales. Actualiza la UI de forma optimista y, gracias al SSE, fuerza la revalidación automática de `services`, métricas y agendas relacionadas.
-- **Citas:** filtros rápidos (hoy, semana, todos) + cambio de estado, edición y borrado. Uso de actualizaciones optimistas y revalidación de todas las variantes (`bookings:time:status`, métricas y gráfica de ingresos).
-- **Citas pendientes:** vista dedicada a citas sin asignar. Permite enviar, cancelar o reenviar invitaciones; se sincroniza con los eventos `booking:assignment:*` para reflejar expiraciones y aceptaciones al instante.
-- **Pagos:** permite filtrar por fecha, ver total y registrar pagos (afecta `/api/payments`, métricas y gráfica). Formulario validado.
-- **Inventario:** tabla con resalte para stock bajo y filtro rápido. CRUD optimista + revalidación de métricas.
-- **Dashboard inicial:** tarjetas con citas del día, ingresos del mes, stock bajo y servicios top, además de gráfica diaria.
+### Eventos en tiempo real
+- `GET /api/events` (autenticado) y `GET /api/public/events` (sin sesión).
+- Eventos emitidos: `service:created|updated|deleted`, `booking:created|updated|deleted|status`, `booking:assignment:sent|accepted|expired|cancelled`, `payment:created`, `payments:invalidate`, `product:created|updated|deleted`, `stats:invalidate`, `ping` (heartbeat).
 
-Cualquier 401 en una petición provoca el evento `dashboard:unauthorized` → el guard redirige a la Landing y limpia sesión.
+## Ejemplos prácticos (Thunder Client / cURL)
+Guarda cookies entre peticiones (Thunder Client → **Save Cookies** o usa `-c/-b` en cURL).
 
-## Flujo E2E sugerido
-1. Aplicar migraciones y seed.
-2. Iniciar backend, Landing y Dashboard.
-3. Login en Landing con `admin@estetica.mx / changeme123` (crea cookie HttpOnly).
-4. En el Dashboard:
-   - Crear/editar/eliminar un servicio y observar el refetch automático.
-   - Agendar una cita, cambiarla de estado (confirmar/done/cancelar) y comprobar que la tarjeta de métricas se actualiza.
-   - Registrar un pago y validar que el total del rango y la gráfica cambian al instante.
-   - Ajustar inventario y verificar el contador de stock bajo.
-5. Cerrar sesión desde el header → cookie eliminada y redirección a la Landing.
-
-## Ejemplos cURL
 ```bash
-# Login (guardará la cookie en cookies.txt)
+# Login y guardado de cookie
 curl -i -c cookies.txt -X POST http://localhost:3000/api/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@estetica.mx","password":"changeme123"}'
 
-# Crear servicio
-token_cookie="cookies.txt"
-curl -b "$token_cookie" -X POST http://localhost:3000/api/services \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Nuevo servicio","price":350,"duration":60}'
+# Obtener sesión actual
+curl -b cookies.txt http://localhost:3000/api/me
 
-# Listar citas de la semana (zona America/Tijuana)
-curl -b "$token_cookie" "http://localhost:3000/api/bookings?from=$(date +%Y-%m-%d)&to=$(date -d '+7 day' +%Y-%m-%d)"
+# Crear servicio
+curl -b cookies.txt -X POST http://localhost:3000/api/services \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Peinado editorial","price":550,"duration":75}'
+
+# Crear cita (usa ID real de servicio)
+curl -b cookies.txt -X POST http://localhost:3000/api/bookings \
+  -H "Content-Type: application/json" \
+  -d '{"clientName":"María López","serviceId":"<serviceId>","startTime":"2025-03-15T17:00:00.000-08:00","notes":"Prefiere esmalte rojo"}'
+
+# Listar citas sin asignar
+curl -b cookies.txt http://localhost:3000/api/bookings/unassigned
+
+# Enviar invitación de asignación
+curl -b cookies.txt -X POST http://localhost:3000/api/assignments \
+  -H "Content-Type: application/json" \
+  -d '{"bookingId":"<bookingId>","email":"colaboradora@example.com"}'
+
+# Aceptar invitación (desde navegador o curl)
+curl "http://localhost:3000/api/assignments/accept?token=<token>"
 ```
 
-## Optimización Landing
-- Imágenes WebP/AVIF con `loading="lazy"`, `decoding="async"`, `width/height` definidos y `fetchpriority="high"` sólo para hero.
-- Fuentes con `display=swap` y preloads mínimos.
-- Code-splitting con `React.lazy` para secciones no críticas.
-- Sin `console.log` en build.
+## Estándares de UI del Dashboard
+- Mantén tipografías y espaciados consistentes con los componentes ShadCN (botones, badges, cards).
+- Tablas de inventario y listados deben ocupar todo el ancho disponible; alinear botones como "+ Nuevo producto" con la cabecera.
+- Usa badges/chips para estados (`scheduled`, `confirmed`, etc.) con códigos de color existentes.
+- Evita contenedores estrechos: prioriza diseños responsivos con `grid`/`flex`.
+
+## CORS, cookies y seguridad
+- Orígenes permitidos en desarrollo: `http://localhost:3001` y `http://localhost:3003` con `credentials:true`.
+- La cookie `salon_auth` es `HttpOnly` y `SameSite=Lax`; en producción debe emitirse con `Secure=true` (requiere HTTPS).
+- Los roles `ADMIN` y `EMPLOYEE` gobiernan acceso a rutas (usuarios solo ADMIN). Maneja JWTs exclusivamente desde el backend; no exponerlos en el frontend.
+
+## Despliegue (producción)
+1. Construye frontends con `npm run build` en `Landing/` y `Dashboard/`.
+2. Despliega la API en un entorno Node (PORT=3000) detrás de un proxy que rote `/api` y preserve `X-Forwarded-*`.
+3. Sirve los bundles de Vite como archivos estáticos (por ejemplo, desde el mismo proxy o CDN).
+4. Configura HTTPS en el dominio y habilita `SESSION_COOKIE_DOMAIN`, `NODE_ENV=production` y `Secure=true` para la cookie.
+5. Ajusta variables `PUBLIC_API_URL`, `PUBLIC_LANDING_URL`, `PUBLIC_DASHBOARD_URL` al dominio público.
+6. Usa Neon para la base productiva (rama/branch correspondiente) y ejecuta `prisma migrate deploy` antes de liberar.
+7. Checklist post deploy:
+   - [ ] Login y `/api/me` responden 200.
+   - [ ] SSE `/api/events` conecta desde el dashboard (revisa consola de red).
+   - [ ] Landing muestra servicios públicos.
+   - [ ] Invitación por correo llega o se loguea en consola (modo mock).
 
 ## Troubleshooting
-- **Cookies ausentes:** revisar dominio/origen. Todas las llamadas deben usar `credentials: 'include'`.
-- **CORS bloqueado:** asegúrate de usar `VITE_API_URL` sin slash final y que el backend esté en 3000.
-- **`Secure` en local:** no habilitar `SESSION_COOKIE_DOMAIN` ni `NODE_ENV=production` sin TLS.
-- **Errores de validación (400):** el payload no cumple las reglas Zod (nombres ≤ 100 caracteres, precios > 0, duración 5–480, stock ≥ 0).
-- **Conflictos de migraciones:** ejecutar `npx prisma migrate resolve --applied <id>` y repetir `npm run prisma:migrate`.
+- **Prisma P3006 / P1014:** revisa que `estetica_shadow` esté vacía y que `DIRECT_URL` apunte al endpoint directo antes de `prisma:migrate`.
+- **Baseline vacía:** ejecuta `npm run prisma:baseline` y luego `npx prisma migrate resolve --applied <id>`.
+- **PowerShell no interpreta `--to-url`:** usa `npm run prisma:baseline:ps`.
+- **Cookie no se guarda:** verifica que las peticiones usen `credentials: 'include'`, que el dominio coincida y que no forces `Secure` en HTTP.
+- **401 recurrente:** cuando `apiFetch` detecta 401, el Dashboard redirige a la Landing. Revisa expiración del token o diferencias de dominio.
+- **SSE sin refresco:** asegúrate de que el dashboard abra `EventSource` con `withCredentials` y que no haya bloqueos de CORS.
+- **Correos no llegan:** sin SMTP/Resend configurado se registran en consola. Proporciona credenciales válidas o usa Resend.
+- **Puertos ocupados:** cambia puerto con `npm run dev -- --port XXXX` o libera procesos (`lsof -i :3000`).
 
-## Checklist de despliegue
-- [ ] Landing y Dashboard servidos bajo HTTPS en el mismo dominio.
-- [ ] Proxy inverso reenviando `/api` al backend y preservando encabezados (`Host`, `X-Forwarded-*`).
-- [ ] Variables `NODE_ENV=production`, `SESSION_COOKIE_NAME`, `SESSION_COOKIE_DOMAIN` (si aplica) y `JWT_SECRET` configuradas.
-- [ ] Cookie con `Secure=true`, `HttpOnly=true`, `SameSite=Lax`.
-- [ ] Ejecutar `npm run build` en Landing/Dashboard y servir los assets estáticos (Vite build).
-- [ ] Backend ejecutándose con `npm run start` (transpilado) y acceso a la base PostgreSQL migrada/sembrada.
-- [ ] Verificar con cURL/Thunder Client: login, `/api/me`, `/api/services`.
+## Pruebas manuales recomendadas
+1. **Flujo E2E:** crea cita → verifica en Citas → envía invitación → acepta token → confirma que `assignedEmail` aparece y métricas se actualizan.
+2. **Expiración forzada:** modifica `ASSIGNMENT_EXPIRATION_HOURS` a 1 y reinicia backend para comprobar badge "vence" y expiración automática.
+3. **Inventario:** CRUD completo y verificación de ancho completo en la tabla.
+4. **Pagos:** registra pago y valida actualización de totales + gráfica.
+5. **Sesión:** fuerza un 401 (borrar cookie) y confirma redirección automática a la Landing.
+
+## Contribución y scripts útiles
+- Backend:
+  - `npm run dev` – servidor Express con recarga (`ts-node-dev`).
+  - `npm run build` / `npm run start` – compilación TS y arranque en producción.
+  - `npm run prisma:migrate` – `prisma migrate dev`.
+  - `npm run prisma:reset` – resetea base (solo desarrollo).
+  - `npm run prisma:seed` – ejecuta `prisma/seed.ts`.
+  - `npm run prisma:baseline` / `npm run prisma:baseline:ps` – generan baseline desde esquema actual.
+- Frontends (`Landing/`, `Dashboard/`): `npm run dev` y `npm run build`.
+- Convenciones: usa commits descriptivos (`feat:`, `fix:`, `docs:`) y PRs con resumen de alcance + pasos de prueba manual.
+
+## Roadmap y estado
+No hay roadmap público en el repositorio. Abre un issue para proponer mejoras o nuevas funcionalidades.
+
+## Licencia y contacto
+Licencia no especificada. Para dudas o soporte abre un issue en GitHub o contacta al equipo interno responsable del salón.

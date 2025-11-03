@@ -377,7 +377,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       <div className="container mx-auto px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="font-heading mb-4" style={{ color: '#ffffff' }}>
+          <h2 className="font-heading text-4xl md:text-5xl mb-4" style={{ color: '#ffffff' }}>
             Agenda tu Cita
           </h2>
           <div className="w-24 h-0.5 bg-editorial-beige mx-auto mb-6" style={{ boxShadow: '0 0 8px rgba(234, 220, 199, 0.4)' }}></div>

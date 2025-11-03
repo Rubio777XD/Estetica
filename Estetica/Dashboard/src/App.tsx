@@ -28,6 +28,8 @@ import { ensureSession, logout as remoteLogout } from './lib/auth';
 import { API_BASE_URL } from './lib/api';
 import { invalidateQuery, invalidateQueriesMatching } from './lib/data-store';
 
+const SHOW_INVENTORY = false;
+
 const LANDING_FALLBACK = (
   import.meta.env.VITE_PUBLIC_LANDING_URL as string | undefined || 'http://localhost:3001/'
 ).replace(/\/$/, '') + '/';
@@ -86,7 +88,7 @@ function AuthGuard({ children }: PropsWithChildren) {
   return <>{children}</>;
 }
 
-const menuItems = [
+const baseMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
   { id: 'citas-proximas', label: 'Citas próximas', icon: Calendar },
   { id: 'citas-terminadas', label: 'Citas terminadas', icon: CheckCircle2 },
@@ -95,6 +97,8 @@ const menuItems = [
   { id: 'pagos', label: 'Pagos & Comisiones', icon: CreditCard },
   { id: 'inventario', label: 'Inventario', icon: Package },
 ];
+
+const menuItems = baseMenuItems.filter((item) => SHOW_INVENTORY || item.id !== 'inventario');
 
 function AppShell() {
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -124,6 +128,12 @@ function AppShell() {
       setActiveSection('dashboard');
     }
   }, [activeSection, isAdmin]);
+
+  useEffect(() => {
+    if (!SHOW_INVENTORY && activeSection === 'inventario') {
+      setActiveSection('dashboard');
+    }
+  }, [activeSection]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -292,7 +302,7 @@ function AppShell() {
       case 'pagos':
         return <Pagos />;
       case 'inventario':
-        return <Inventario />;
+        return SHOW_INVENTORY ? <Inventario /> : <Dashboard />;
       case 'usuarios':
         return <Usuarios isAdmin={isAdmin} />;
       default:

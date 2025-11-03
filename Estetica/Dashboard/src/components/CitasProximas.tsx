@@ -584,10 +584,13 @@ export default function CitasProximas() {
               ¿Seguro que quieres cancelar? Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogCancel onClick={() => setCancelDialog(null)}>Atrás</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleConfirmCancel}>
-              Cancelar cita
+            <AlertDialogAction
+              className="bg-red-600 text-white shadow-[0_12px_30px_rgba(220,38,38,0.35)] transition hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+              onClick={handleConfirmCancel}
+            >
+              Cancelar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

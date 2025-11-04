@@ -3,6 +3,7 @@ import { LuxuryHeader } from "./components/LuxuryHeader";
 import { HomeSection } from "./components/sections/HomeSection";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { LuxuryFooter } from "./components/LuxuryFooter";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 const ServicesSection = lazy(() =>
   import("./components/sections/ServicesSection").then((module) => ({ default: module.ServicesSection }))
@@ -41,6 +42,7 @@ export default function App() {
   const [activeSection, setActiveSection] = useState('home');
   const [preSelectedService, setPreSelectedService] = useState<string | undefined>();
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [bookingSectionKey, setBookingSectionKey] = useState(0);
 
   const handleNavigation = (sectionId: string, serviceId?: string) => {
     if (sectionId === activeSection) return;
@@ -140,8 +142,34 @@ export default function App() {
         );
       case 'agendar':
         return (
-          <div key={activeSection} className={wrapperClassName}>
-            <BookingSection preSelectedService={preSelectedService} />
+          <div key={`${activeSection}-${bookingSectionKey}`} className={wrapperClassName}>
+            <ErrorBoundary
+              key={bookingSectionKey}
+              onReset={() => setBookingSectionKey((key) => key + 1)}
+              fallback={({ reset }) => (
+                <div className="py-20 content-layer">
+                  <div className="container mx-auto px-6">
+                    <div className="dark-card p-8 text-center space-y-4">
+                      <h3 className="font-heading text-high-contrast">
+                        Hubo un problema al cargar la sección de citas.
+                      </h3>
+                      <p className="font-body text-medium-contrast">
+                        Recarga la página o intenta nuevamente.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => reset()}
+                      >
+                        Reintentar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            >
+              <BookingSection preSelectedService={preSelectedService} />
+            </ErrorBoundary>
           </div>
         );
       case 'sobre-nosotros':

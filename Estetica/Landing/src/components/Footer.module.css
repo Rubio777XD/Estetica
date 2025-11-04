@@ -1,0 +1,270 @@
+.footer {
+  background-color: var(--background, #0e0e0e);
+  color: var(--text-primary, #ffffff);
+  padding: 4rem 0 2.5rem;
+  position: relative;
+  isolation: isolate;
+}
+
+.footerContainer {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+.footerGrid {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: "brand services contact";
+}
+
+.brandColumn {
+  grid-area: brand;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 320px;
+}
+
+.brandTitle {
+  font-size: 2rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary, #d4af37);
+}
+
+.brandSubtitle {
+  font-size: 1rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.brandDescription {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-secondary, #cccccc);
+}
+
+.socialLinks {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.socialLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 9999px;
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--primary, #d4af37);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.socialLink:hover,
+.socialLink:focus-visible {
+  transform: translateY(-2px);
+  background: var(--primary, #d4af37);
+  color: #0b0b0b;
+  outline: none;
+}
+
+.servicesColumn {
+  grid-area: services;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.contactColumn {
+  grid-area: contact;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.columnTitle {
+  position: relative;
+  font-size: 1.25rem;
+  font-weight: 600;
+  padding-bottom: 0.75rem;
+}
+
+.columnTitle::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 2.75rem;
+  height: 2px;
+  background: var(--primary, #d4af37);
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.65);
+}
+
+.linkList,
+.contactList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0;
+  margin: 0;
+  color: var(--text-secondary, #cccccc);
+}
+
+.linkList li {
+  padding-left: 1.25rem;
+  position: relative;
+}
+
+.linkList li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(212, 175, 55, 0.4);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.45);
+}
+
+.contactList li {
+  display: flex;
+}
+
+.contactLink {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: var(--text-secondary, #cccccc);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.contactLink svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.2rem;
+  color: var(--primary, #d4af37);
+}
+
+.contactLink:hover,
+.contactLink:focus-visible {
+  color: var(--primary, #d4af37);
+  outline: none;
+}
+
+.footerBottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.legalGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.legalNav {
+  display: inline-flex;
+  gap: 1rem;
+}
+
+.legalNav a {
+  color: var(--primary, #d4af37);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  text-decoration-color: rgba(212, 175, 55, 0.65);
+  text-decoration-thickness: 1px;
+  transition: color 0.2s ease;
+}
+
+.legalNav a:hover,
+.legalNav a:focus-visible {
+  color: #f6d776;
+  outline: none;
+}
+
+.certificationGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.9rem;
+}
+
+.madeWithLove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--primary, #d4af37);
+  font-weight: 500;
+}
+
+@media (max-width: 1023px) {
+  .footerGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "brand services"
+      "contact contact";
+  }
+
+  .brandColumn {
+    max-width: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .footerContainer {
+    padding: 0 1.25rem;
+    gap: 2.5rem;
+  }
+
+  .footerGrid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "brand"
+      "services"
+      "contact";
+  }
+
+  .footerBottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .legalGroup,
+  .certificationGroup {
+    align-items: flex-start;
+  }
+
+  .legalNav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .socialLink,
+  .legalNav a,
+  .contactLink {
+    transition: none;
+  }
+}

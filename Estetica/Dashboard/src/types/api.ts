@@ -98,6 +98,7 @@ export interface CommissionRow {
   serviceName: string;
   startTime: string;
   assignedEmail?: string | null;
+  commissionAssigneeEmail?: string | null;
   paymentMethod?: PaymentMethod | null;
   paymentCreatedAt?: string | null;
   amount: number;
@@ -109,6 +110,7 @@ export interface CommissionsResponse {
   rows: CommissionRow[];
   totalAmount: number;
   totalCommission: number;
+  collaborators: string[];
 }
 
 export interface ProductsResponse {

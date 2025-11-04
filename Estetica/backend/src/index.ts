@@ -808,6 +808,7 @@ const commissionQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  collaboratorEmail: z.string().email().optional(),
 });
 
 protectedRouter.get(
@@ -1419,6 +1420,7 @@ type CommissionRow = {
   serviceName: string;
   startTime: string;
   assignedEmail: string | null | undefined;
+  commissionAssigneeEmail: string | null;
   paymentMethod: PaymentMethod | null;
   paymentCreatedAt: Date | null;
   amount: number;
@@ -1450,6 +1452,7 @@ const mapBookingsToCommissionRows = (
       serviceName: booking.service.name,
       startTime: booking.startTime.toISOString(),
       assignedEmail: booking.assignedEmail,
+      commissionAssigneeEmail: latestCommission?.assigneeEmail ?? null,
       paymentMethod: latestPayment?.method ?? null,
       paymentCreatedAt: latestPayment?.createdAt ?? null,
       amount: roundCurrency(amount ?? 0),
@@ -1500,7 +1503,7 @@ protectedRouter.get(
       throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
     }
 
-    const { from, to } = parsed.data;
+    const { from, to, collaboratorEmail } = parsed.data;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.done,
     };
@@ -1513,6 +1516,14 @@ protectedRouter.get(
       if (to) {
         where.startTime.lte = parseDateOnly(to, { endOfDay: true });
       }
+    }
+
+    if (collaboratorEmail) {
+      const normalizedCollaborator = normalizeEmail(collaboratorEmail);
+      where.OR = [
+        { assignedEmail: normalizedCollaborator },
+        { commissions: { some: { assigneeEmail: normalizedCollaborator } } },
+      ];
     }
 
     const bookings = await prisma.booking.findMany({
@@ -1526,9 +1537,18 @@ protectedRouter.get(
     const totalAmount = rows.reduce((sum, item) => sum + item.amount, 0);
     const totalCommission = rows.reduce((sum, item) => sum + item.commissionAmount, 0);
 
+    const collaborators = rows
+      .map((row) => row.assignedEmail ?? row.commissionAssigneeEmail ?? null)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
     return sendSuccess(
       res,
-      { rows, totalAmount: roundCurrency(totalAmount), totalCommission: roundCurrency(totalCommission) },
+      {
+        rows,
+        totalAmount: roundCurrency(totalAmount),
+        totalCommission: roundCurrency(totalCommission),
+        collaborators: Array.from(new Set(collaborators)).sort((a, b) => a.localeCompare(b)),
+      },
       'Pagos y comisiones'
     );
   })
@@ -1542,7 +1562,7 @@ protectedRouter.get(
       throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
     }
 
-    const { from, to } = parsed.data;
+    const { from, to, collaboratorEmail } = parsed.data;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.done,
     };
@@ -1555,6 +1575,14 @@ protectedRouter.get(
       if (to) {
         where.startTime.lte = parseDateOnly(to, { endOfDay: true });
       }
+    }
+
+    if (collaboratorEmail) {
+      const normalizedCollaborator = normalizeEmail(collaboratorEmail);
+      where.OR = [
+        { assignedEmail: normalizedCollaborator },
+        { commissions: { some: { assigneeEmail: normalizedCollaborator } } },
+      ];
     }
 
     const bookings = await prisma.booking.findMany({

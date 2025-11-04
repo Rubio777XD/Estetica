@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -8,7 +8,7 @@ import { CheckCircle, Clock, User, Phone, Mail, Calendar as CalendarIcon } from 
 import { apiFetch } from "../../lib/api";
 import { usePublicServices } from "../../lib/services-store";
 import { formatLocalDateTime, getLocalDateTimeInputValue, isoToLocalInputValue, localDateTimeToIso } from "../../lib/datetime";
-import { generateSalonSlots, getSalonDateKey, SALON_TIME_ZONE, type SalonSlot } from "../../lib/time-slots";
+import { buildSalonSlots, getSalonDateKey, SALON_TIME_ZONE, type SalonSlot } from "../../lib/time-slots";
 
 interface BookingSectionProps {
   preSelectedService?: string;
@@ -24,10 +24,28 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const currencyFormatter = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedService, setSelectedService] = useState(preSelectedService || '');
-  const [dateTimeValue, setDateTimeValue] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<SalonSlot[]>([]);
+  const [minDateTimeValue] = useState(() => getLocalDateTimeInputValue());
+
+  const parseDateInput = (value: string | null | undefined) => {
+    if (!value) {
+      return null;
+    }
+    const iso = localDateTimeToIso(`${value}T00:00`);
+    return iso ? new Date(iso) : null;
+  };
+
+  const fallbackDateKey = useMemo(() => getSalonDateKey(new Date(), SALON_TIME_ZONE), []);
+  const minDateValue = useMemo(() => {
+    const base = minDateTimeValue ? minDateTimeValue.slice(0, 10) : fallbackDateKey;
+    return base || fallbackDateKey;
+  }, [minDateTimeValue, fallbackDateKey]);
+
+  const initialDate = useMemo(() => parseDateInput(minDateValue) ?? new Date(), [minDateValue]);
+  const initialDateRef = useRef(initialDate);
+
+  const [selectedDate, setSelectedDate] = useState<Date | null>(initialDateRef.current);
+  const [selectedTime, setSelectedTime] = useState('');
+  const [slots, setSlots] = useState<SalonSlot[] | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -37,8 +55,11 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     phone: '',
     email: '',
   });
-  const [minDateTimeValue] = useState(() => getLocalDateTimeInputValue());
-  const minDateValue = minDateTimeValue ? minDateTimeValue.slice(0, 10) : '';
+
+  const selectedDateValue = useMemo(
+    () => (selectedDate ? getSalonDateKey(selectedDate, SALON_TIME_ZONE) : ''),
+    [selectedDate]
+  );
 
   const progress = ((currentStep - 1) / 2) * 100;
 
@@ -61,14 +82,13 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     if (!services.some((service) => service.id === selectedService)) {
       setSelectedService('');
       setCurrentStep(1);
-      setDateTimeValue('');
-      setSelectedDate('');
-      setSelectedSlot('');
-      setAvailableSlots([]);
+      setSelectedDate(initialDateRef.current ? new Date(initialDateRef.current) : null);
+      setSelectedTime('');
+      setSlots(null);
       setNotes('');
       setSubmitError(null);
     }
-  }, [services, selectedService]);
+  }, [services, selectedService, initialDateRef]);
 
   useEffect(() => {
     if (!preSelectedService) {
@@ -76,40 +96,44 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     }
     if (services.some((service) => service.id === preSelectedService)) {
       setSelectedService(preSelectedService);
-      setDateTimeValue('');
-      setSelectedDate('');
-      setSelectedSlot('');
-      setAvailableSlots([]);
+      setSelectedDate(initialDateRef.current ? new Date(initialDateRef.current) : null);
+      setSelectedTime('');
+      setSlots(null);
       setNotes('');
       setSubmitError(null);
       setCurrentStep(2);
     }
-  }, [preSelectedService, services]);
+  }, [preSelectedService, services, initialDateRef]);
 
   useEffect(() => {
     if ((currentStep === 2 || currentStep === 3) && !selectedDate) {
-      const fallback = getSalonDateKey();
-      setSelectedDate(minDateValue || fallback);
+      setSelectedDate(initialDateRef.current ? new Date(initialDateRef.current) : null);
     }
-  }, [currentStep, selectedDate, minDateValue]);
+  }, [currentStep, selectedDate, initialDateRef]);
 
   useEffect(() => {
     if (!selectedDate) {
-      setAvailableSlots([]);
-      setSlotsStatus('idle');
-      setSlotsError(null);
-      setSelectedSlot('');
-      setDateTimeValue('');
+      setSlots([]);
+      setSelectedTime('');
       return;
     }
 
     let cancelled = false;
-    const slots = generateSalonSlots(selectedDate);
-    setSelectedSlot('');
-    setDateTimeValue('');
+    setSlots(null);
+    const nextSlots = buildSalonSlots({
+      date: selectedDate,
+      timeZone: SALON_TIME_ZONE,
+      openHour: 9,
+      closeHour: 21,
+      stepMinutes: 60,
+      hidePastOnToday: true,
+    });
 
     if (!cancelled) {
-      setAvailableSlots(slots);
+      setSlots(nextSlots);
+      setSelectedTime((current) =>
+        current && nextSlots.some((slot) => slot.value === current) ? current : ''
+      );
     }
 
     return () => {
@@ -122,22 +146,22 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       return;
     }
     setSelectedService(serviceId);
-    setDateTimeValue('');
-      setSelectedDate('');
-      setSelectedSlot('');
-      setAvailableSlots([]);
+    setSelectedDate(initialDateRef.current ? new Date(initialDateRef.current) : null);
+    setSelectedTime('');
+    setSlots(null);
     setNotes('');
     setSubmitError(null);
     setCurrentStep(2);
   };
 
   const handleDateTimeSelect = () => {
-    if (!dateTimeValue || !selectedSlot) {
+    if (!selectedTime) {
       setSubmitError('Selecciona un horario disponible.');
       return;
     }
 
-    if (!localDateTimeToIso(dateTimeValue)) {
+    const localValue = isoToLocalInputValue(selectedTime);
+    if (!localValue || !localDateTimeToIso(localValue)) {
       setSubmitError('Selecciona una fecha y hora válidas.');
       return;
     }
@@ -146,14 +170,12 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     setCurrentStep(3);
   };
 
-  const handleSlotSelect = (slotStart: string) => {
-    const inputValue = isoToLocalInputValue(slotStart);
-    if (!inputValue) {
+  const handleSlotSelect = (slotValue: string) => {
+    if (!slotValue) {
       setSubmitError('No fue posible interpretar el horario seleccionado.');
       return;
     }
-    setSelectedSlot(slotStart);
-    setDateTimeValue(inputValue);
+    setSelectedTime(slotValue);
     setSubmitError(null);
   };
 
@@ -167,8 +189,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       return;
     }
 
-    const startIso = localDateTimeToIso(dateTimeValue);
-    if (!startIso) {
+    if (!selectedTime) {
       setSubmitError('Selecciona una fecha y hora válidas.');
       setCurrentStep(2);
       return;
@@ -195,7 +216,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
           clientName: formData.name.trim(),
           clientEmail: formData.email.trim() || undefined,
           serviceId: selectedService,
-          startTime: startIso,
+          startTime: selectedTime,
           notes: extraNotes.join(' | '),
         }),
         credentials: 'include',
@@ -220,18 +241,27 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   };
 
   const selectedServiceData = services.find((service) => service.id === selectedService) || null;
-  const formattedDateTime = dateTimeValue ? formatLocalDateTime(dateTimeValue) : '';
+  const formattedDateTime = useMemo(() => {
+    if (!selectedTime) {
+      return '';
+    }
+    const localValue = isoToLocalInputValue(selectedTime);
+    if (!localValue) {
+      return '';
+    }
+    return formatLocalDateTime(localValue);
+  }, [selectedTime]);
 
   const generateCalendarFile = () => {
-    if (!selectedServiceData || (!dateTimeValue && !selectedSlot)) return;
+    if (!selectedServiceData || !selectedTime) return;
 
-    const startIso = selectedSlot || localDateTimeToIso(dateTimeValue);
-    if (!startIso) return;
-
-    const startDate = new Date(startIso);
+    const startDate = new Date(selectedTime);
+    if (Number.isNaN(startDate.getTime())) {
+      return;
+    }
     const durationMinutes = selectedServiceData?.duration ?? 90;
     const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
-    
+
     const formatDate = (date: Date) => {
       return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     };
@@ -492,10 +522,13 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                       <Input
                         id="booking-date"
                         type="date"
-                        value={selectedDate}
+                        value={selectedDateValue}
                         min={minDateValue || undefined}
                         onChange={(event) => {
-                          setSelectedDate(event.target.value);
+                          const value = event.target.value;
+                          const parsed = parseDateInput(value);
+                          setSelectedDate(parsed);
+                          setSelectedTime('');
                           setSubmitError(null);
                         }}
                         className="h-12 rounded-xl"
@@ -506,34 +539,41 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                     </div>
                     <div className="space-y-3">
                       <p className="text-sm text-medium-contrast">Horarios disponibles</p>
-                      {selectedDate ? (
-                        availableSlots.length === 0 ? (
-                          <p className="text-sm text-medium-contrast">
-                            No hay horarios disponibles para esta fecha. Prueba con otro día.
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                            {availableSlots.map((slot) => {
-                              const isSelected = selectedSlot === slot.start;
-                              return (
-                                <button
-                                  key={slot.start}
-                                  type="button"
-                                  onClick={() => handleSlotSelect(slot.start)}
-                                  className={`rounded-xl border px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 ${
-                                    isSelected
-                                      ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
-                                      : 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
-                                  }`}
-                                >
-                                  <span className="block">{slot.label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )
-                      ) : (
+                      {!selectedDate ? (
                         <p className="text-sm text-medium-contrast">Elige una fecha para consultar los horarios.</p>
+                      ) : slots === null ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {Array.from({ length: 6 }).map((_, index) => (
+                            <div
+                              key={index}
+                              className="h-12 rounded-xl border border-editorial-beige/20 bg-editorial-beige/10 animate-pulse"
+                            />
+                          ))}
+                        </div>
+                      ) : slots.length === 0 ? (
+                        <p className="text-sm text-medium-contrast">
+                          No hay horarios disponibles para esta fecha. Prueba con otro día.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {slots.map((slot) => {
+                            const isSelected = selectedTime === slot.value;
+                            return (
+                              <button
+                                key={slot.value}
+                                type="button"
+                                onClick={() => handleSlotSelect(slot.value)}
+                                className={`rounded-xl border px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 ${
+                                  isSelected
+                                    ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
+                                    : 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
+                                }`}
+                              >
+                                <span className="block">{slot.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -549,7 +589,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                   </button>
                   <button
                     onClick={handleDateTimeSelect}
-                    disabled={!selectedSlot}
+                    disabled={!selectedTime}
                     className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     type="button"
                   >

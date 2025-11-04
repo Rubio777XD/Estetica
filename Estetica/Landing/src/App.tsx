@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { LuxuryHeader } from "./components/LuxuryHeader";
 import { HomeSection } from "./components/sections/HomeSection";
 import { MobileBottomNav } from "./components/MobileBottomNav";
-import { LuxuryFooter } from "./components/LuxuryFooter";
+import { Footer } from "./components/Footer";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 const ServicesSection = lazy(() =>
@@ -214,10 +214,8 @@ export default function App() {
         </Suspense>
       </main>
       
-      {/* Footer - only show on contact section or desktop */}
-      {activeSection === 'contacto' && (
-        <LuxuryFooter />
-      )}
+      {/* Global Footer */}
+      <Footer />
       
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav 

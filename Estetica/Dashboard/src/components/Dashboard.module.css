@@ -1,0 +1,237 @@
+.dashboardGrid {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .dashboardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboardGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-items: stretch;
+    align-items: stretch;
+  }
+}
+
+.servicesCard {
+  grid-column: 1 / -1;
+}
+
+.dashCard {
+  background-color: #ffffff;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+  border-radius: 0 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0 !important;
+  height: 240px;
+  box-shadow: none !important;
+}
+
+.dashCardTop {
+  height: 240px;
+}
+
+.dashCardServices {
+  height: 230px;
+}
+
+@media (max-width: 1023px) {
+  .dashCard,
+  .dashCardTop {
+    height: 210px;
+  }
+
+  .dashCardServices {
+    height: 220px;
+  }
+}
+
+@media (max-width: 767px) {
+  .dashCard,
+  .dashCardTop,
+  .dashCardServices {
+    height: auto;
+  }
+}
+
+.dashCardHeader {
+  padding: 14px 16px 0 !important;
+  gap: 0.5rem;
+  border-bottom: none;
+}
+
+.dashCardTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashCardHeading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.dashCardIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #6b7280;
+}
+
+.dashCardDescription {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.dashCardBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 16px !important;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.dashCardScroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  scrollbar-gutter: stable both-edges;
+}
+
+.dashCardScroll:focus-visible {
+  outline: 2px solid #d4af37;
+  outline-offset: 2px;
+}
+
+.dashCardScroll::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.dashCardScroll::-webkit-scrollbar-thumb {
+  background-color: rgba(17, 24, 39, 0.25);
+  border-radius: 9999px;
+}
+
+.dashCardScroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(17, 24, 39, 0.4);
+}
+
+.badgeMuted {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  font-weight: 500;
+}
+
+.emptyState {
+  border: 1px dashed #d1d5db;
+  background-color: #ffffff;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  color: #6b7280;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .statusGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.statusCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  min-height: 4.5rem;
+}
+
+.statusLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.statusValue {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.listItem {
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.listItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.listItemTitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.listItemSubtle {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.servicesRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.servicesInfo {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.servicesName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.servicesCount {
+  font-size: 0.75rem;
+  color: #6b7280;
+}

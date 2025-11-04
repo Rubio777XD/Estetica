@@ -1,0 +1,227 @@
+.footer {
+  background: var(--background, #0e0e0e);
+  color: var(--text-primary, #ffffff);
+  padding: 4rem 0 2.5rem;
+}
+
+.container {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+.columns {
+  display: grid;
+  gap: 2.5rem;
+}
+
+.brandColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.brandTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.75rem;
+  color: var(--primary, #d4af37);
+}
+
+.brandSubtitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.125rem;
+  color: rgba(212, 175, 55, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.brandDivider {
+  width: 4.5rem;
+  height: 2px;
+  background: var(--primary, #d4af37);
+}
+
+.brandDescription {
+  font-family: 'Inter', sans-serif;
+  color: var(--text-secondary, #cccccc);
+  line-height: 1.6;
+  max-width: 30rem;
+}
+
+.socialLinks {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.socialButton {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--primary, #d4af37);
+  color: var(--primary, #d4af37);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.socialButton:hover,
+.socialButton:focus-visible {
+  background: var(--primary, #d4af37);
+  color: #0b0b0b;
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.columnTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.125rem;
+  color: var(--text-primary, #ffffff);
+  margin-bottom: 1.25rem;
+}
+
+.list {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-secondary, #cccccc);
+}
+
+.listItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.link,
+.inlineLink {
+  color: var(--primary, #d4af37);
+  text-decoration: none;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.link:hover,
+.link:focus-visible,
+.inlineLink:hover,
+.inlineLink:focus-visible {
+  color: #f7d87c;
+  text-decoration: underline;
+  outline: none;
+}
+
+.contactDetails {
+  display: grid;
+  gap: 1rem;
+}
+
+.contactInfo {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.iconCircle {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--primary, #d4af37);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.contactText {
+  display: grid;
+  gap: 0.25rem;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-secondary, #cccccc);
+}
+
+.contactLabel {
+  font-size: 0.8rem;
+  color: var(--text-muted, #999999);
+}
+
+.legalBar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: 'Inter', sans-serif;
+  color: var(--text-secondary, #cccccc);
+  font-size: 0.85rem;
+}
+
+.legalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.legalInfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--primary, #d4af37);
+}
+
+@media (min-width: 768px) {
+  .columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .contactColumn {
+    grid-column: 1 / -1;
+  }
+
+  .legalBar {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+@media (min-width: 1024px) {
+  .columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .contactColumn {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .footer {
+    padding: 3rem 0 2rem;
+  }
+
+  .brandTitle {
+    font-size: 1.5rem;
+  }
+
+  .brandSubtitle {
+    font-size: 1rem;
+  }
+}
+
+.footer :focus-visible {
+  outline: 2px solid var(--primary, #d4af37);
+  outline-offset: 3px;
+}

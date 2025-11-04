@@ -77,8 +77,8 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 lg:justify-items-center">
+        <Card className="w-full rounded-2xl border border-gray-100 shadow-lg">
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-gray-500" />
@@ -119,52 +119,7 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
-
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
-          <CardHeader className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-gray-500" />
-              <CardTitle className="text-lg font-semibold text-gray-900">Servicios más solicitados</CardTitle>
-            </div>
-            <p className="text-sm text-gray-500">Ranking basado en las citas agendadas recientemente.</p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {overviewStatus === 'loading' ? (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            ) : overviewStatus === 'error' ? (
-              <p className="text-sm text-red-600">
-                {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
-              </p>
-            ) : topServices.length === 0 ? (
-              <p className="text-sm text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
-            ) : (
-              <div className="space-y-2">
-                {topServices.map((service) => (
-                  <div
-                    key={service.serviceId}
-                    className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{service.name}</p>
-                      <p className="text-xs text-gray-500">{service.count} citas</p>
-                    </div>
-                    <Badge variant="outline" className="border-gray-200 bg-white text-gray-700">
-                      #{service.count}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+        <Card className="w-full rounded-2xl border border-gray-100 shadow-lg">
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <Clock3 className="h-5 w-5 text-gray-500" />
@@ -217,7 +172,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
+        <Card className="w-full rounded-2xl border border-gray-100 shadow-lg">
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-gray-500" />
@@ -262,6 +217,48 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="rounded-2xl border border-gray-100 shadow-lg">
+        <CardHeader className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-gray-500" />
+            <CardTitle className="text-lg font-semibold text-gray-900">Servicios más solicitados</CardTitle>
+          </div>
+          <p className="text-sm text-gray-500">Ranking basado en las citas agendadas recientemente.</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {overviewStatus === 'loading' ? (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          ) : overviewStatus === 'error' ? (
+            <p className="text-sm text-red-600">
+              {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
+            </p>
+          ) : topServices.length === 0 ? (
+            <p className="text-sm text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
+          ) : (
+            <div className="space-y-2">
+              {topServices.map((service) => (
+                <div
+                  key={service.serviceId}
+                  className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/80 px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{service.name}</p>
+                    <p className="text-xs text-gray-500">{service.count} citas</p>
+                  </div>
+                  <Badge variant="outline" className="border-gray-200 bg-white text-gray-700">
+                    #{service.count}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

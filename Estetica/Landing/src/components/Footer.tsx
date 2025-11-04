@@ -1,57 +1,126 @@
+import { Instagram, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
+
+import styles from "./Footer.module.css";
+
+const WHATSAPP_LINK = "https://wa.me/5216651105558?text=Hola%20Ibeth%2C%20quiero%20agendar%20una%20cita";
+const INSTAGRAM_LINK = "https://www.instagram.com/studio__arrr/";
+
 export function Footer() {
   return (
-    <footer className="bg-black text-white py-12">
-      <div className="container mx-auto px-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Información principal */}
-          <div>
-            <h3 className="text-xl text-amber-400 mb-4">
+    <footer className={styles.footer}>
+      <div className={styles.footerContainer}>
+        <div className={styles.footerGrid}>
+          <div className={styles.brandColumn}>
+            <h2 className={`font-heading ${styles.brandTitle}`}>
               Studio AR
-            </h3>
-            <p className="text-gray-300 mb-4">
-              Fundado por <span className="text-amber-400 font-semibold">Ibeth Rentería</span> — Lashista Profesional y Master Trainer desde 2021.
+            </h2>
+            <p className={`font-body ${styles.brandSubtitle}`}>
+              Ibeth Rentería
             </p>
-            <p className="text-gray-400 text-sm leading-relaxed">
-              Especialista en extensiones de pestañas y formación de nuevas artistas dentro de la industria de la belleza.
-              Comprometida con la excelencia, calidad y crecimiento personal y profesional de cada alumna.
+            <p className={`font-body ${styles.brandDescription}`}>
+              Estudio boutique especializado en extensiones de pestañas premium y formación de nuevas artistas con estándares internacionales.
             </p>
+            <div className={styles.socialLinks}>
+              <a
+                href={INSTAGRAM_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram oficial de Studio AR"
+                className={styles.socialLink}
+              >
+                <Instagram aria-hidden="true" />
+              </a>
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Contactar a Studio AR por WhatsApp"
+                className={styles.socialLink}
+              >
+                <MessageCircle aria-hidden="true" />
+              </a>
+            </div>
           </div>
 
-          {/* Servicios */}
-          <div>
-            <h4 className="text-white mb-4">
-              Servicios
-            </h4>
-            <ul className="space-y-2 text-gray-300">
+          <div className={styles.servicesColumn}>
+            <h2 className={`font-heading ${styles.columnTitle}`}>
+              Nuestros Servicios
+            </h2>
+            <ul className={styles.linkList}>
               <li>Extensiones de Pestañas</li>
               <li>Capacitaciones Profesionales</li>
               <li>Diseño y Cuidado de Pestañas</li>
-              <li>Entrenamientos para Lashistas</li>
+              <li>Asesorías Personalizadas</li>
             </ul>
           </div>
 
-          {/* Contacto */}
-          <div>
-            <h4 className="text-white mb-4">
-              Contacto
-            </h4>
-            <ul className="space-y-2 text-gray-300">
-              <li>+52 664 000 0000</li>
-              <li>studioar.ibeth@gmail.com</li>
-              <li>@studioar_ibeth</li>
-              <li>Tijuana, Baja California</li>
+          <div className={styles.contactColumn}>
+            <h2 className={`font-heading ${styles.columnTitle}`}>
+              Contacto Directo
+            </h2>
+            <ul className={styles.contactList}>
+              <li>
+                <a
+                  href={WHATSAPP_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.contactLink}
+                >
+                  <MessageCircle aria-hidden="true" />
+                  <span>+52 1 665 110 5558 (WhatsApp)</span>
+                </a>
+              </li>
+              <li>
+                <a href="tel:+5216651105558" className={styles.contactLink}>
+                  <Phone aria-hidden="true" />
+                  <span>+52 1 665 110 5558</span>
+                </a>
+              </li>
+              <li>
+                <a
+                  href="mailto:ibeth.zare30@gmail.com"
+                  className={styles.contactLink}
+                >
+                  <Mail aria-hidden="true" />
+                  <span>ibeth.zare30@gmail.com</span>
+                </a>
+              </li>
+              <li>
+                <div className={styles.contactLink}>
+                  <MapPin aria-hidden="true" />
+                  <span>Av. Miguel Hidalgo 281, Local 2 · Tecate, Baja California</span>
+                </div>
+              </li>
+              <li>
+                <a
+                  href={INSTAGRAM_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.contactLink}
+                >
+                  <Instagram aria-hidden="true" />
+                  <span>@studio__arrr</span>
+                </a>
+              </li>
             </ul>
           </div>
         </div>
 
-        {/* Copyright */}
-        <div className="border-t border-gray-800 mt-8 pt-8 text-center">
-          <p className="text-gray-400">
-            © {new Date().getFullYear()} Studio AR — Ibeth Rentería. Todos los derechos reservados.
-          </p>
-          <p className="text-xs text-gray-600 mt-1">
-            Certificada por el Consejo Nacional de Normalización y Certificación de Competencias Laborales.
-          </p>
+        <div className={styles.footerBottom}>
+          <div className={styles.legalGroup}>
+            <span className={styles.copyright}>© 2025 Studio AR — Ibeth Rentería</span>
+            <nav aria-label="Enlaces legales" className={styles.legalNav}>
+              <a href="#TODO-privacy">Política de Privacidad</a>
+              <a href="#TODO-terms">Términos de Servicio</a>
+            </nav>
+          </div>
+          <div className={styles.certificationGroup}>
+            <span>Certificada por el CONOCER</span>
+            <span className={styles.madeWithLove}>
+              Hecho con <span aria-hidden="true">♥</span>
+              <span className="sr-only">amor</span>
+            </span>
+          </div>
         </div>
       </div>
     </footer>

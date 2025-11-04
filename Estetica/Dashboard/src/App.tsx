@@ -2,6 +2,7 @@ import { PropsWithChildren, useEffect, useState } from 'react';
 import {
   Calendar,
   CalendarClock,
+  CalendarPlus,
   Users,
   Scissors,
   CreditCard,
@@ -24,6 +25,7 @@ import CitasProximas from './components/CitasProximas';
 import CitasTerminadas from './components/CitasTerminadas';
 import CitasPendientes from './components/CitasPendientes';
 import Usuarios from './components/Usuarios';
+import CreateBooking from './pages/CreateBooking';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
 import { API_BASE_URL } from './lib/api';
 import { invalidateQuery, invalidateQueriesMatching } from './lib/data-store';
@@ -93,6 +95,7 @@ const baseMenuItems = [
   { id: 'citas-proximas', label: 'Citas próximas', icon: Calendar },
   { id: 'citas-terminadas', label: 'Citas terminadas', icon: CheckCircle2 },
   { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
+  { id: 'crear-cita', label: 'Crear cita', icon: CalendarPlus },
   { id: 'servicios', label: 'Servicios', icon: Scissors },
   { id: 'pagos', label: 'Pagos & Comisiones', icon: CreditCard },
   { id: 'inventario', label: 'Inventario', icon: Package },
@@ -297,6 +300,8 @@ function AppShell() {
         return <CitasTerminadas />;
       case 'citas-pendientes':
         return <CitasPendientes />;
+      case 'crear-cita':
+        return <CreateBooking />;
       case 'servicios':
         return <Servicios />;
       case 'pagos':

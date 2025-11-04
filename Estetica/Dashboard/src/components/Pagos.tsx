@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Download, Filter, Loader2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
-import { API_BASE_URL, apiFetch } from '../lib/api';
-import { formatCurrency, formatDateTime, toDateKey } from '../lib/format';
+import { apiFetch } from '../lib/api';
+import { formatCurrency, formatDateTime, toDateKey, TIME_ZONE_ID } from '../lib/format';
 import { useApiQuery } from '../lib/data-store';
 import type { CommissionsResponse, PaymentMethod } from '../types/api';
 
@@ -21,13 +22,49 @@ const today = new Date();
 const initialFrom = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
 const initialTo = toDateKey(today);
 
-const COMMISSIONS_KEY = (from?: string, to?: string) => `commissions:${from ?? 'all'}:${to ?? 'all'}`;
+const FILTER_STORAGE_KEY = 'dashboard:payments:filters';
+const COMMISSIONS_KEY = (from?: string, to?: string, collaborator?: string) =>
+  `commissions:${from ?? 'all'}:${to ?? 'all'}:${collaborator ?? 'all'}`;
+const csvDateFormatter = new Intl.DateTimeFormat('es-MX', {
+  timeZone: TIME_ZONE_ID,
+  dateStyle: 'short',
+  timeStyle: 'short',
+});
+
+type StoredFilters = {
+  from?: string;
+  to?: string;
+  collaborator?: string;
+};
+
+function getStoredFilters(): StoredFilters | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as StoredFilters;
+    return {
+      from: typeof parsed.from === 'string' ? parsed.from : undefined,
+      to: typeof parsed.to === 'string' ? parsed.to : undefined,
+      collaborator: typeof parsed.collaborator === 'string' ? parsed.collaborator : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default function Pagos() {
-  const [dateFrom, setDateFrom] = useState<string>(initialFrom);
-  const [dateTo, setDateTo] = useState<string>(initialTo);
+  const storedFilters = getStoredFilters();
+  const [dateFrom, setDateFrom] = useState<string>(storedFilters?.from ?? initialFrom);
+  const [dateTo, setDateTo] = useState<string>(storedFilters?.to ?? initialTo);
+  const [collaboratorInput, setCollaboratorInput] = useState<string>(storedFilters?.collaborator ?? '');
+  const [collaboratorFilter, setCollaboratorFilter] = useState<string>(storedFilters?.collaborator ?? '');
 
-  const key = COMMISSIONS_KEY(dateFrom, dateTo);
+  const key = COMMISSIONS_KEY(dateFrom, dateTo, collaboratorFilter);
   const {
     data: commissionsResponse,
     status,
@@ -37,6 +74,7 @@ export default function Pagos() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
+    if (collaboratorFilter) params.set('collaboratorEmail', collaboratorFilter);
     const query = params.toString();
     return apiFetch<CommissionsResponse>(`/api/commissions${query ? `?${query}` : ''}`);
   });
@@ -44,33 +82,87 @@ export default function Pagos() {
   const rows = commissionsResponse?.rows ?? [];
   const totalAmount = commissionsResponse?.totalAmount ?? 0;
   const totalCommission = commissionsResponse?.totalCommission ?? 0;
+  const collaboratorOptions = useMemo(() => {
+    const rawList = commissionsResponse?.collaborators ?? [];
+    const fromRows = rows
+      .map((row) => row.assignedEmail || row.commissionAssigneeEmail || null)
+      .filter((value): value is string => Boolean(value));
+    return Array.from(new Set([...rawList, ...fromRows])).sort((a, b) => a.localeCompare(b));
+  }, [commissionsResponse, rows]);
 
-  const handleExport = async () => {
-    const params = new URLSearchParams();
-    if (dateFrom) params.set('from', dateFrom);
-    if (dateTo) params.set('to', dateTo);
-    const query = params.toString();
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/commissions/export${query ? `?${query}` : ''}`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error(`Export failed (${response.status})`);
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const filename = `pagos_comisiones_${dateFrom || 'inicio'}_${dateTo || 'hoy'}.csv`;
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'No fue posible exportar los datos';
-      toast.error(message);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
     }
+    const payload: StoredFilters = {
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
+      collaborator: collaboratorFilter || undefined,
+    };
+    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(payload));
+  }, [dateFrom, dateTo, collaboratorFilter]);
+
+  const handleExport = () => {
+    if (rows.length === 0) {
+      toast.info('No hay datos para exportar.');
+      return;
+    }
+
+    const escape = (value: string | number) => {
+      const stringValue = typeof value === 'number' ? value.toString() : value;
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const lines = [['fecha', 'cliente', 'servicio', 'colaboradora', 'monto', 'comision']];
+    for (const row of rows) {
+      const collaboratorEmail = row.assignedEmail || row.commissionAssigneeEmail || '';
+      lines.push([
+        csvDateFormatter.format(new Date(row.startTime)),
+        row.clientName,
+        row.serviceName,
+        collaboratorEmail,
+        row.amount.toFixed(2),
+        row.commissionAmount.toFixed(2),
+      ]);
+    }
+
+    const csvContent = '\ufeff' + lines.map((line) => line.map(escape).join(',')).join('\n');
+    const filenameParts = [
+      'pagos_comisiones',
+      dateFrom || 'inicio',
+      dateTo || 'hoy',
+      collaboratorFilter ? collaboratorFilter.replace(/[^a-z0-9]+/gi, '_') : null,
+    ].filter(Boolean);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${filenameParts.join('_')}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleApplyFilters = () => {
+    const normalized = collaboratorInput.trim().toLowerCase();
+    setCollaboratorInput(normalized);
+    if (collaboratorFilter === normalized) {
+      void refetch();
+    } else {
+      setCollaboratorFilter(normalized);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setDateFrom(initialFrom);
+    setDateTo(initialTo);
+    setCollaboratorInput('');
+    setCollaboratorFilter('');
+    void refetch();
   };
 
   const renderContent = () => {
@@ -138,7 +230,9 @@ export default function Pagos() {
                 <TableCell className="text-gray-600">
                   {row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] : '—'}
                 </TableCell>
-                <TableCell className="text-gray-600">{row.assignedEmail ?? '—'}</TableCell>
+                <TableCell className="text-gray-600">
+                  {row.assignedEmail ?? row.commissionAssigneeEmail ?? '—'}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -156,26 +250,59 @@ export default function Pagos() {
             Consulta los pagos registrados y la comisión correspondiente para cada cita realizada.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(event) => setDateFrom(event.target.value)}
-            max={dateTo}
-          />
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(event) => setDateTo(event.target.value)}
-            min={dateFrom}
-          />
-          <Button variant="outline" onClick={() => refetch()} className="gap-2">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col space-y-1">
+            <Label htmlFor="payments-from" className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+              Desde
+            </Label>
+            <Input
+              id="payments-from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              max={dateTo}
+            />
+          </div>
+          <div className="flex flex-col space-y-1">
+            <Label htmlFor="payments-to" className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+              Hasta
+            </Label>
+            <Input
+              id="payments-to"
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              min={dateFrom}
+            />
+          </div>
+          <div className="flex flex-col space-y-1 min-w-[220px]">
+            <Label htmlFor="collaborator-filter" className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+              Filtrar por correo de colaboradora
+            </Label>
+            <Input
+              id="collaborator-filter"
+              type="email"
+              value={collaboratorInput}
+              onChange={(event) => setCollaboratorInput(event.target.value)}
+              placeholder="colaboradora@correo.com"
+              list="payments-collaborators"
+            />
+            <datalist id="payments-collaborators">
+              {collaboratorOptions.map((email) => (
+                <option key={email} value={email} />
+              ))}
+            </datalist>
+          </div>
+          <Button variant="outline" onClick={handleApplyFilters} className="gap-2">
             <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
             Aplicar filtros
           </Button>
-          <Button onClick={handleExport} className="gap-2">
+          <Button variant="outline" onClick={handleClearFilters}>
+            Limpiar
+          </Button>
+          <Button onClick={handleExport} className="gap-2" disabled={rows.length === 0}>
             <Download className="h-4 w-4" />
-            Exportar
+            Exportar CSV
           </Button>
         </div>
       </div>

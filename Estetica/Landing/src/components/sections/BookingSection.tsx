@@ -8,23 +8,11 @@ import { CheckCircle, Clock, User, Phone, Mail, Calendar as CalendarIcon } from 
 import { apiFetch } from "../../lib/api";
 import { usePublicServices } from "../../lib/services-store";
 import { formatLocalDateTime, getLocalDateTimeInputValue, isoToLocalInputValue, localDateTimeToIso } from "../../lib/datetime";
+import { generateSalonSlots, getSalonDateKey, SALON_TIME_ZONE, type SalonSlot } from "../../lib/time-slots";
 
 interface BookingSectionProps {
   preSelectedService?: string;
 }
-
-type AvailabilitySlot = {
-  start: string;
-  end: string;
-  available: boolean;
-  conflicted?: boolean;
-};
-
-const slotTimeFormatter = new Intl.DateTimeFormat("es-MX", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "America/Tijuana",
-});
 
 export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const {
@@ -39,9 +27,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
   const [dateTimeValue, setDateTimeValue] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
-  const [slotsStatus, setSlotsStatus] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
-  const [slotsError, setSlotsError] = useState<string | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<SalonSlot[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -79,8 +65,6 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       setSelectedDate('');
       setSelectedSlot('');
       setAvailableSlots([]);
-      setSlotsStatus('idle');
-      setSlotsError(null);
       setNotes('');
       setSubmitError(null);
     }
@@ -96,8 +80,6 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
       setSelectedDate('');
       setSelectedSlot('');
       setAvailableSlots([]);
-      setSlotsStatus('idle');
-      setSlotsError(null);
       setNotes('');
       setSubmitError(null);
       setCurrentStep(2);
@@ -106,7 +88,7 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
 
   useEffect(() => {
     if ((currentStep === 2 || currentStep === 3) && !selectedDate) {
-      const fallback = getLocalDateTimeInputValue().slice(0, 10);
+      const fallback = getSalonDateKey();
       setSelectedDate(minDateValue || fallback);
     }
   }, [currentStep, selectedDate, minDateValue]);
@@ -122,29 +104,13 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     }
 
     let cancelled = false;
-    setSlotsStatus('loading');
-    setSlotsError(null);
+    const slots = generateSalonSlots(selectedDate);
     setSelectedSlot('');
     setDateTimeValue('');
 
-    void apiFetch<{ slots?: AvailabilitySlot[]; message?: string }>(
-      `/api/public/bookings/availability?date=${selectedDate}`
-    )
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setAvailableSlots(response.slots ?? []);
-        setSlotsStatus('success');
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : 'No fue posible cargar la disponibilidad.';
-        setSlotsError(message);
-        setSlotsStatus('error');
-      });
+    if (!cancelled) {
+      setAvailableSlots(slots);
+    }
 
     return () => {
       cancelled = true;
@@ -157,11 +123,9 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
     }
     setSelectedService(serviceId);
     setDateTimeValue('');
-    setSelectedDate('');
-    setSelectedSlot('');
-    setAvailableSlots([]);
-    setSlotsStatus('idle');
-    setSlotsError(null);
+      setSelectedDate('');
+      setSelectedSlot('');
+      setAvailableSlots([]);
     setNotes('');
     setSubmitError(null);
     setCurrentStep(2);
@@ -537,18 +501,12 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                         className="h-12 rounded-xl"
                       />
                       <p className="text-xs text-medium-contrast">
-                        Horario local: America/Tijuana. Selecciona el día que prefieras.
+                        Horario local: {SALON_TIME_ZONE}. Selecciona el día que prefieras.
                       </p>
                     </div>
                     <div className="space-y-3">
                       <p className="text-sm text-medium-contrast">Horarios disponibles</p>
-                      {slotsStatus === 'loading' ? (
-                        <p className="text-sm text-medium-contrast">Cargando horarios…</p>
-                      ) : slotsStatus === 'error' ? (
-                        <div className="text-sm text-red-400">
-                          {slotsError ?? 'No fue posible cargar la disponibilidad.'}
-                        </div>
-                      ) : slotsStatus === 'success' ? (
+                      {selectedDate ? (
                         availableSlots.length === 0 ? (
                           <p className="text-sm text-medium-contrast">
                             No hay horarios disponibles para esta fecha. Prueba con otro día.
@@ -557,39 +515,18 @@ export function BookingSection({ preSelectedService }: BookingSectionProps) {
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             {availableSlots.map((slot) => {
                               const isSelected = selectedSlot === slot.start;
-                              const hasConflict = slot.conflicted === true;
-                              const isDisabled = !slot.available;
                               return (
                                 <button
                                   key={slot.start}
                                   type="button"
                                   onClick={() => handleSlotSelect(slot.start)}
-                                  disabled={isDisabled}
                                   className={`rounded-xl border px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-editorial-beige/40 ${
                                     isSelected
                                       ? 'border-editorial-beige bg-editorial-beige/10 text-editorial-beige shadow-lg'
-                                      : isDisabled
-                                      ? 'cursor-not-allowed border-white/10 text-white/30'
-                                      : hasConflict
-                                      ? 'border-editorial-beige/50 bg-white/5 text-white hover:border-editorial-beige hover:text-editorial-beige'
                                       : 'border-editorial-beige/40 text-high-contrast hover:border-editorial-beige'
                                   }`}
-                                  title={
-                                    hasConflict
-                                      ? 'Hay otra cita en este horario, pero puedes continuar.'
-                                      : isDisabled
-                                      ? 'Este horario ya no está disponible.'
-                                      : undefined
-                                  }
                                 >
-                                  <span className="block">
-                                    {slotTimeFormatter.format(new Date(slot.start))}
-                                  </span>
-                                  {hasConflict ? (
-                                    <span className="mt-1 block text-[11px] font-normal uppercase tracking-wide text-editorial-beige/80">
-                                      Horario con otra cita (permitido)
-                                    </span>
-                                  ) : null}
+                                  <span className="block">{slot.label}</span>
                                 </button>
                               );
                             })}

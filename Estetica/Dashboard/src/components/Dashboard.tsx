@@ -19,7 +19,9 @@ const STATUS_LABELS = {
   confirmed: 'Confirmadas',
   done: 'Realizadas',
   canceled: 'Canceladas',
-};
+} as const;
+
+const STATUS_ORDER = ['scheduled', 'confirmed', 'done', 'canceled'] as const;
 
 export default function Dashboard() {
   const {
@@ -80,23 +82,21 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className={styles.dashboardGrid}>
         <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-              <CalendarDays className="h-5 w-5 text-gray-500" aria-hidden="true" />
+            <CardTitle className={styles.cardTitle}>
+              <CalendarDays className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
               Citas de hoy
             </CardTitle>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Resumen rápido del estado de las citas programadas para la fecha actual.
-            </p>
+            <p className={styles.subtitle}>Resumen rápido del estado de las citas programadas para la fecha actual.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
             <div className={styles.cardBody}>
               {overviewStatus === 'loading' ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className={styles.statGrid}>
                   {Array.from({ length: 4 }).map((_, index) => (
-                    <div key={index} className="h-20 rounded-md bg-gray-100 animate-pulse" />
+                    <div key={index} className={cn(styles.statCard, styles.skeleton)} />
                   ))}
                 </div>
               ) : overviewStatus === 'error' ? (
@@ -109,16 +109,11 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {Object.entries(overview?.todayBookings ?? {}).map(([status, value]) => (
-                    <div
-                      key={status}
-                      className="flex flex-col justify-between rounded-md border border-gray-200 bg-gray-50/80 p-4"
-                    >
-                      <span className="text-[0.68rem] font-medium uppercase tracking-wide text-gray-500">
-                        {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
-                      </span>
-                      <span className="text-2xl font-semibold text-gray-900">{value}</span>
+                <div className={styles.statGrid}>
+                  {STATUS_ORDER.map((status) => (
+                    <div key={status} className={styles.statCard}>
+                      <span className={styles.statLabel}>{STATUS_LABELS[status]}</span>
+                      <span className={styles.statValue}>{overview?.todayBookings?.[status] ?? 0}</span>
                     </div>
                   ))}
                 </div>
@@ -129,20 +124,18 @@ export default function Dashboard() {
 
         <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-              <Clock3 className="h-5 w-5 text-gray-500" aria-hidden="true" />
+            <CardTitle className={styles.cardTitle}>
+              <Clock3 className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
               Citas próximas
             </CardTitle>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Las próximas 5 citas asignadas a colaboradoras.
-            </p>
+            <p className={styles.subtitle}>Las próximas 5 citas asignadas a colaboradoras.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
             <div className={cn(styles.cardBody, styles.scrollable)}>
               {upcomingStatus === 'loading' ? (
-                <div className="space-y-2">
+                <div className={styles.itemList}>
                   {Array.from({ length: 5 }).map((_, index) => (
-                    <div key={index} className="h-16 rounded-md bg-gray-100 animate-pulse" />
+                    <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
                   ))}
                 </div>
               ) : upcomingStatus === 'error' ? (
@@ -159,22 +152,19 @@ export default function Dashboard() {
                   No hay citas próximas asignadas. Asigna nuevas citas desde la sección de pendientes.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className={styles.itemList}>
                   {upcoming.map((booking) => (
-                    <div
-                      key={booking.id}
-                      className="flex flex-col gap-1 rounded-md border border-gray-200 bg-white p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-gray-900">{booking.clientName}</p>
-                        <Badge variant="outline" className="border-gray-200 bg-gray-50 px-2 py-1 text-[0.7rem] text-gray-600">
+                    <div key={booking.id} className={styles.itemCard}>
+                      <div className={styles.itemHeader}>
+                        <p className={styles.itemTitle}>{booking.clientName}</p>
+                        <Badge variant="outline" className={cn(styles.badge, 'border-gray-200 bg-gray-50 text-gray-600')}>
                           {booking.status === 'confirmed' ? 'Confirmada' : 'Programada'}
                         </Badge>
                       </div>
-                      <p className="text-xs text-gray-500">{booking.service.name}</p>
-                      <p className="text-xs text-gray-500">{formatDateTime(booking.startTime)}</p>
+                      <p className={styles.itemMeta}>{booking.service.name}</p>
+                      <p className={styles.itemMeta}>{formatDateTime(booking.startTime)}</p>
                       {booking.assignedEmail ? (
-                        <p className="text-xs text-gray-400">Colaboradora: {booking.assignedEmail}</p>
+                        <p className={cn(styles.itemNote, styles.truncate)}>Colaboradora: {booking.assignedEmail}</p>
                       ) : null}
                     </div>
                   ))}
@@ -186,20 +176,18 @@ export default function Dashboard() {
 
         <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-              <CalendarDays className="h-5 w-5 text-gray-500" aria-hidden="true" />
+            <CardTitle className={styles.cardTitle}>
+              <CalendarDays className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
               Citas pendientes
             </CardTitle>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Citas sin asignar que requieren atención inmediata.
-            </p>
+            <p className={styles.subtitle}>Citas sin asignar que requieren atención inmediata.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
             <div className={cn(styles.cardBody, styles.scrollable)}>
               {pendingStatus === 'loading' ? (
-                <div className="space-y-2">
+                <div className={styles.itemList}>
                   {Array.from({ length: 5 }).map((_, index) => (
-                    <div key={index} className="h-16 rounded-md bg-gray-100 animate-pulse" />
+                    <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
                   ))}
                 </div>
               ) : pendingStatus === 'error' ? (
@@ -216,14 +204,14 @@ export default function Dashboard() {
                   No hay citas pendientes por asignar. Las nuevas citas aparecerán aquí automáticamente.
                 </p>
               ) : (
-                <div className="space-y-2">
+                <div className={styles.itemList}>
                   {pending.map((booking) => (
-                    <div key={booking.id} className="rounded-md border border-gray-200 bg-white p-3">
-                      <p className="text-sm font-semibold text-gray-900">{booking.clientName}</p>
-                      <p className="text-xs text-gray-500">{booking.service.name}</p>
-                      <p className="text-xs text-gray-500">{formatDateTime(booking.startTime)}</p>
+                    <div key={booking.id} className={styles.itemCard}>
+                      <p className={styles.itemTitle}>{booking.clientName}</p>
+                      <p className={styles.itemMeta}>{booking.service.name}</p>
+                      <p className={styles.itemMeta}>{formatDateTime(booking.startTime)}</p>
                       {booking.notes ? (
-                        <p className="text-xs text-gray-400 line-clamp-1">Notas: {booking.notes}</p>
+                        <p className={cn(styles.itemNote, styles.clampTwo)}>Notas: {booking.notes}</p>
                       ) : null}
                     </div>
                   ))}
@@ -232,51 +220,50 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      <Card className={cn(styles.cardBase, styles.servicesCard, 'rounded-none border border-gray-200')}>
-        <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
-          <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Users className="h-5 w-5 text-gray-500" aria-hidden="true" />
-            Servicios más solicitados
-          </CardTitle>
-          <p className="text-xs text-gray-500 leading-relaxed">Ranking basado en las citas agendadas recientemente.</p>
-        </CardHeader>
-        <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
-          <div className={cn(styles.cardBody, styles.scrollable)}>
-            {overviewStatus === 'loading' ? (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="h-14 rounded-md bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            ) : overviewStatus === 'error' ? (
-              <p className="rounded-md border border-red-100 bg-red-50 p-4 text-xs text-red-700">
-                {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
-              </p>
-            ) : topServices.length === 0 ? (
-              <p className="text-xs text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
-            ) : (
-              <div className="space-y-2">
-                {topServices.map((service) => (
-                  <div
-                    key={service.serviceId}
-                    className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50/80 px-4 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 line-clamp-1">{service.name}</p>
-                      <p className="text-xs text-gray-500">{service.count} citas</p>
+        <Card className={cn(styles.cardBase, styles.servicesCard, styles.fullSpan, 'w-full rounded-none border border-gray-200')}>
+          <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
+            <CardTitle className={styles.cardTitle}>
+              <Users className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
+              Servicios más solicitados
+            </CardTitle>
+            <p className={styles.subtitle}>Ranking basado en las citas agendadas recientemente.</p>
+          </CardHeader>
+          <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
+            <div className={cn(styles.cardBody, styles.scrollable)}>
+              {overviewStatus === 'loading' ? (
+                <div className={styles.itemList}>
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
+                  ))}
+                </div>
+              ) : overviewStatus === 'error' ? (
+                <p className="rounded-md border border-red-100 bg-red-50 p-4 text-xs text-red-700">
+                  {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
+                </p>
+              ) : topServices.length === 0 ? (
+                <p className="text-xs text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
+              ) : (
+                <div className={styles.itemList}>
+                  {topServices.map((service, index) => (
+                    <div key={service.serviceId ?? index} className={styles.itemCard}>
+                      <div className={styles.itemHeader}>
+                        <div>
+                          <p className={styles.itemTitle}>{service.name}</p>
+                          <p className={styles.itemMeta}>{service.count} citas</p>
+                        </div>
+                        <Badge variant="outline" className={cn(styles.rankBadge, 'border-gray-200')}>
+                          #{service.count}
+                        </Badge>
+                      </div>
                     </div>
-                    <Badge variant="outline" className="border-gray-200 bg-white px-2 py-1 text-[0.7rem] text-gray-700">
-                      #{service.count}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

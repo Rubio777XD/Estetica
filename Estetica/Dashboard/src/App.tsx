@@ -92,12 +92,12 @@ function AuthGuard({ children }: PropsWithChildren) {
 
 const baseMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
+  { id: 'crear-cita', label: 'Crear cita', icon: CalendarPlus },
+  { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
   { id: 'citas-proximas', label: 'Citas próximas', icon: Calendar },
   { id: 'citas-terminadas', label: 'Citas terminadas', icon: CheckCircle2 },
-  { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
-  { id: 'crear-cita', label: 'Crear cita', icon: CalendarPlus },
   { id: 'servicios', label: 'Servicios', icon: Scissors },
-  { id: 'pagos', label: 'Pagos & Comisiones', icon: CreditCard },
+  { id: 'pagos', label: 'Pagos y comisión', icon: CreditCard },
   { id: 'inventario', label: 'Inventario', icon: Package },
 ];
 

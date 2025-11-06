@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, MailPlus, Pencil, Trash2 } from 'lucide-react';
+import { CalendarPlus, Loader2, MailPlus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -22,6 +22,8 @@ import { apiFetch, ApiError } from '../lib/api';
 import { formatDateTime, localDateTimeToIso, toDateTimeInputValue } from '../lib/format';
 import { invalidateQuery, invalidateQueriesMatching, useApiQuery } from '../lib/data-store';
 import type { Assignment, AssignmentStatus, Booking, Service } from '../types/api';
+
+import CreateAppointmentForm, { CreateAppointmentFormState } from './CreateAppointmentForm';
 
 const PENDING_KEY = 'bookings:pending';
 const PAGE_SIZE = 10;
@@ -105,6 +107,11 @@ const getInviteStatus = (
   return null;
 };
 
+const INITIAL_CREATE_FORM_STATE: CreateAppointmentFormState = {
+  isSubmitting: false,
+  isValid: false,
+};
+
 export default function CitasPendientes() {
   const [currentPage, setCurrentPage] = useState(1);
   const [assignDialog, setAssignDialog] = useState<AssignDialogState | null>(null);
@@ -112,6 +119,9 @@ export default function CitasPendientes() {
   const [editDialog, setEditDialog] = useState<EditDialogState | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createFormState, setCreateFormState] = useState<CreateAppointmentFormState>(INITIAL_CREATE_FORM_STATE);
+  const createFormId = 'create-appointment-form';
 
   const { data: bookings = [], status, error, refetch, setData } = useApiQuery<BookingWithRelations[]>(
     PENDING_KEY,
@@ -144,6 +154,38 @@ export default function CitasPendientes() {
       setCurrentPage((prev) => prev - 1);
     }
   }, [sortedBookings.length, pageStart, currentPage]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return () => undefined;
+    }
+
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'n' || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        const isEditable =
+          target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+        if (isEditable) {
+          return;
+        }
+      }
+      if (createDialogOpen) {
+        return;
+      }
+      event.preventDefault();
+      setCreateFormState(INITIAL_CREATE_FORM_STATE);
+      setCreateDialogOpen(true);
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => {
+      window.removeEventListener('keydown', handleShortcut);
+    };
+  }, [createDialogOpen]);
 
   const openAssignDialog = (booking: BookingWithRelations) => {
     const latest = getLatestAssignment(booking.assignments);
@@ -252,6 +294,22 @@ export default function CitasPendientes() {
     } finally {
       setCancelling((prev) => ({ ...prev, [booking.id]: false }));
     }
+  };
+
+  const handleCreateSuccess = (booking: Booking) => {
+    const pendingBooking: BookingWithRelations = {
+      ...booking,
+      assignments: booking.assignments ?? [],
+    };
+
+    setData((prev = []) => {
+      const next = [...prev, pendingBooking];
+      return next.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    });
+    setCurrentPage(1);
+    invalidateQuery('bookings:pending:summary');
+    setCreateDialogOpen(false);
+    setCreateFormState(INITIAL_CREATE_FORM_STATE);
   };
 
   const renderContent = () => {
@@ -464,13 +522,73 @@ export default function CitasPendientes() {
         <p className="text-sm text-gray-500 max-w-2xl">
           Asigna colaboradoras, ajusta detalles o cancela citas que aún no se han confirmado.
         </p>
-        <Button variant="outline" onClick={() => refetch()} disabled={status === 'loading'} className="gap-2">
-          <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => refetch()} disabled={status === 'loading'} className="gap-2">
+            <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+          <Button
+            className="gap-2"
+            onClick={() => {
+              setCreateFormState(INITIAL_CREATE_FORM_STATE);
+              setCreateDialogOpen(true);
+            }}
+            aria-label="Crear nueva cita"
+          >
+            <CalendarPlus className="h-4 w-4" />
+            Crear cita
+          </Button>
+        </div>
       </div>
 
       {renderContent()}
+
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && createFormState.isSubmitting) {
+            return;
+          }
+          setCreateDialogOpen(open);
+          if (!open) {
+            setCreateFormState(INITIAL_CREATE_FORM_STATE);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Crear cita</DialogTitle>
+            <DialogDescription>Registra una nueva cita manualmente sin salir de Citas pendientes.</DialogDescription>
+          </DialogHeader>
+          {createDialogOpen ? (
+            <CreateAppointmentForm
+              formId={createFormId}
+              hideSubmitButton
+              showSuccessSummary={false}
+              submitLabel="Crear cita"
+              onSuccess={handleCreateSuccess}
+              onStateChange={setCreateFormState}
+            />
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreateDialogOpen(false)}
+              disabled={createFormState.isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form={createFormId}
+              disabled={!createFormState.isValid || createFormState.isSubmitting}
+            >
+              {createFormState.isSubmitting ? 'Creando cita…' : 'Crear cita'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={assignDialog !== null} onOpenChange={(open) => !open && !assignLoading && setAssignDialog(null)}>
         <DialogContent>

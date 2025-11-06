@@ -145,106 +145,43 @@ export default function CreateBooking() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <Card className="border border-gray-200 shadow-lg">
-        <CardHeader>
-          <CardTitle>Crear nueva cita</CardTitle>
-          <CardDescription>
-            Registra una cita manualmente desde el salón. Todas las citas permiten horarios simultáneos y usan la zona horaria local.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-6" onSubmit={handleSubmit}>
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="client-name">Nombre completo*</Label>
-                  <Input
-                    id="client-name"
-                    value={clientName}
-                    onChange={(event) => setClientName(event.target.value)}
-                    placeholder="Nombre y apellidos"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="client-email">Correo electrónico</Label>
-                  <Input
-                    id="client-email"
-                    type="email"
-                    value={clientEmail}
-                    onChange={(event) => setClientEmail(event.target.value)}
-                    placeholder="cliente@correo.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="client-phone">Teléfono</Label>
-                  <Input
-                    id="client-phone"
-                    type="tel"
-                    value={clientPhone}
-                    onChange={(event) => setClientPhone(event.target.value)}
-                    placeholder="Opcional"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Servicio*</Label>
-                  <Select value={serviceId} onValueChange={setServiceId} disabled={servicesStatus === 'loading'}>
-                    <SelectTrigger id="service">
-                      <SelectValue placeholder="Selecciona un servicio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {services.map((service) => (
-                        <SelectItem key={service.id} value={service.id}>
-                          {service.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {servicesStatus === 'error' ? (
-                    <p className="text-sm text-red-500">
-                      {servicesError instanceof Error
-                        ? servicesError.message
-                        : 'No fue posible cargar los servicios. Intenta más tarde.'}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="booking-date">Fecha*</Label>
-                    <Input
-                      id="booking-date"
-                      type="date"
-                      min={getSalonDateKey()}
-                      value={date}
-                      onChange={(event) => setDate(event.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Hora*</Label>
-                    <Select value={startTime} onValueChange={setStartTime} disabled={slots.length === 0}>
-                      <SelectTrigger id="booking-time">
-                        <SelectValue placeholder={slots.length === 0 ? 'Sin horarios disponibles' : 'Selecciona un horario'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {slots.map((slot) => (
-                          <SelectItem key={slot.start} value={slot.start}>
-                            {slot.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-500">Horarios en zona local. Los horarios pasados del día actual se ocultan automáticamente.</p>
-                  </div>
-                </div>
-              </div>
+    <div className="max-w-6xl mx-auto space-y-8">
+      <p className="text-sm text-gray-600 max-w-3xl">
+        Registra una cita manualmente desde el salón. Todas las citas permiten horarios simultáneos y usan la zona horaria local.
+      </p>
+      <form className="grid gap-8" onSubmit={handleSubmit}>
+        <div className="grid gap-8 lg:grid-cols-2">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="client-name">Nombre completo*</Label>
+              <Input
+                id="client-name"
+                value={clientName}
+                onChange={(event) => setClientName(event.target.value)}
+                placeholder="Nombre y apellidos"
+                required
+              />
             </div>
-
+            <div className="space-y-2">
+              <Label htmlFor="client-email">Correo electrónico</Label>
+              <Input
+                id="client-email"
+                type="email"
+                value={clientEmail}
+                onChange={(event) => setClientEmail(event.target.value)}
+                placeholder="cliente@correo.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="client-phone">Teléfono</Label>
+              <Input
+                id="client-phone"
+                type="tel"
+                value={clientPhone}
+                onChange={(event) => setClientPhone(event.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="booking-notes">Notas internas</Label>
               <Textarea
@@ -252,20 +189,85 @@ export default function CreateBooking() {
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 placeholder="Detalles adicionales para el equipo (opcional)"
-                rows={4}
+                rows={5}
               />
             </div>
+          </div>
 
-            {submitError ? <p className="text-sm text-red-500">{submitError}</p> : null}
-
-            <div className="flex justify-end">
-              <Button type="submit" disabled={isSubmitting || services.length === 0 || slots.length === 0}>
-                {isSubmitting ? 'Creando cita…' : 'Crear cita'}
-              </Button>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label>Servicio*</Label>
+              <Select value={serviceId} onValueChange={setServiceId} disabled={servicesStatus === 'loading'}>
+                <SelectTrigger id="service">
+                  <SelectValue placeholder="Selecciona un servicio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      {service.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {servicesStatus === 'error' ? (
+                <p className="text-sm text-red-500">
+                  {servicesError instanceof Error
+                    ? servicesError.message
+                    : 'No fue posible cargar los servicios. Intenta más tarde.'}
+                </p>
+              ) : null}
             </div>
-          </form>
-        </CardContent>
-      </Card>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="booking-date">Fecha*</Label>
+                <Input
+                  id="booking-date"
+                  type="date"
+                  min={getSalonDateKey()}
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Hora*</Label>
+                <Select value={startTime} onValueChange={setStartTime} disabled={slots.length === 0}>
+                  <SelectTrigger id="booking-time">
+                    <SelectValue placeholder={slots.length === 0 ? 'Sin horarios disponibles' : 'Selecciona un horario'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slots.map((slot) => (
+                      <SelectItem key={slot.start} value={slot.start}>
+                        {slot.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Horarios en zona local. Los horarios pasados del día actual se ocultan automáticamente.
+                </p>
+              </div>
+            </div>
+
+            {selectedService ? (
+              <div className="rounded-xl border border-gray-200 bg-white/60 p-4 text-sm text-gray-600">
+                <p className="font-medium text-gray-900">Resumen del servicio</p>
+                <p>{selectedService.name}</p>
+                <p className="text-gray-500">Precio base: {formatCurrency(selectedService.price)}</p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {submitError ? <p className="text-sm text-red-500">{submitError}</p> : null}
+
+        <div className="flex justify-end">
+          <Button type="submit" disabled={isSubmitting || services.length === 0 || slots.length === 0}>
+            {isSubmitting ? 'Creando cita…' : 'Crear cita'}
+          </Button>
+        </div>
+      </form>
 
       {summary ? (
         <Card className="border border-green-200 bg-green-50">

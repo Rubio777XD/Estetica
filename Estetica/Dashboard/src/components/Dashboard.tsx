@@ -60,6 +60,7 @@ export default function Dashboard() {
   const topServices = overview?.topServices ?? [];
   const displayedUpcoming = upcoming.slice(0, 3);
   const displayedPending = pending.slice(0, 3);
+  const displayedTopServices = topServices.slice(0, 3);
 
   const handleRefreshAll = () => {
     invalidateQuery('stats-overview');
@@ -244,9 +245,9 @@ export default function Dashboard() {
             <p className={styles.subtitle}>Ranking basado en las citas agendadas recientemente.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
-            <div className={cn(styles.cardBody, styles.scrollable)}>
+            <div className={styles.cardBody}>
               {overviewStatus === 'loading' ? (
-                <div className={styles.itemList}>
+                <div className={cn(styles.itemList, styles.fixedList)}>
                   {Array.from({ length: 3 }).map((_, index) => (
                     <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
                   ))}
@@ -255,11 +256,15 @@ export default function Dashboard() {
                 <p className="rounded-md border border-red-100 bg-red-50 p-4 text-xs text-red-700">
                   {overviewError instanceof Error ? overviewError.message : 'No fue posible obtener los servicios destacados.'}
                 </p>
-              ) : topServices.length === 0 ? (
-                <p className="text-xs text-gray-500">Aún no hay suficientes datos para mostrar esta estadística.</p>
+              ) : displayedTopServices.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500">
+                    Aún no hay suficientes datos para mostrar esta estadística.
+                  </p>
+                </div>
               ) : (
-                <div className={styles.itemList}>
-                  {topServices.map((service, index) => (
+                <div className={cn(styles.itemList, styles.fixedList)}>
+                  {displayedTopServices.map((service, index) => (
                     <div key={service.serviceId ?? index} className={styles.itemCard}>
                       <div className={styles.itemHeader}>
                         <div>
@@ -271,6 +276,13 @@ export default function Dashboard() {
                         </Badge>
                       </div>
                     </div>
+                  ))}
+                  {Array.from({ length: Math.max(0, 3 - displayedTopServices.length) }).map((_, index) => (
+                    <div
+                      key={`top-service-placeholder-${index}`}
+                      className={cn(styles.itemCard, styles.placeholderCard)}
+                      aria-hidden="true"
+                    />
                   ))}
                 </div>
               )}

@@ -1,5 +1,10 @@
 # Registro de cambios
 
+# 2025-11-06
+- Ajustado el bloque "Servicios más solicitados" del dashboard para mostrar máximo tres elementos sin scroll, conservando la altura con placeholders y alineando el estilo con "Citas próximas".
+- Rediseñada la vista de creación de citas eliminando el card interno, expandiendo el formulario a dos columnas en desktop y manteniendo un flujo de una sola columna en móviles.
+- Corrigida la exportación CSV de Pagos y comisiones para respetar filtros activos y mapear correctamente la información de colaboradoras y montos.
+
 # 2025-11-05
 - Ajustado el tablero principal: tarjetas de Citas próximas y Citas pendientes limitadas a tres ítems con placeholders para mantener altura uniforme, y bloque de métricas diarias con el mismo radio de borde.
 - Eliminados los encabezados duplicados en las vistas internas de citas y pagos; los botones de cancelación ahora operan de inmediato sin diálogos de confirmación.

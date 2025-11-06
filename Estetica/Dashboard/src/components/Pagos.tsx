@@ -9,7 +9,7 @@ import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 import { apiFetch } from '../lib/api';
-import { formatCurrency, formatDateTime, toDateKey, TIME_ZONE_ID } from '../lib/format';
+import { formatCurrency, formatDateTime, toDateKey } from '../lib/format';
 import { useApiQuery } from '../lib/data-store';
 import type { CommissionsResponse, PaymentMethod } from '../types/api';
 
@@ -25,12 +25,6 @@ const initialTo = toDateKey(today);
 const FILTER_STORAGE_KEY = 'dashboard:payments:filters';
 const COMMISSIONS_KEY = (from?: string, to?: string, collaborator?: string) =>
   `commissions:${from ?? 'all'}:${to ?? 'all'}:${collaborator ?? 'all'}`;
-const csvDateFormatter = new Intl.DateTimeFormat('es-MX', {
-  timeZone: TIME_ZONE_ID,
-  dateStyle: 'short',
-  timeStyle: 'short',
-});
-
 type StoredFilters = {
   from?: string;
   to?: string;
@@ -116,31 +110,31 @@ export default function Pagos() {
       return stringValue;
     };
 
-    const lines = [['fecha', 'cliente', 'servicio', 'colaboradora', 'monto', 'comision']];
-    for (const row of rows) {
-      const collaboratorEmail = row.assignedEmail || row.commissionAssigneeEmail || '';
-      lines.push([
-        csvDateFormatter.format(new Date(row.startTime)),
-        row.clientName,
-        row.serviceName,
-        collaboratorEmail,
-        row.amount.toFixed(2),
-        row.commissionAmount.toFixed(2),
-      ]);
-    }
+    const visibleRows = rows;
+    const lines = [
+      ['Fecha', 'Cliente', 'Servicio', 'Total de la cita', 'Comisión', 'Método', 'Colaboradora'],
+      ...visibleRows.map((row) => {
+        const collaborator = row.assignedEmail ?? row.commissionAssigneeEmail ?? '';
+        const methodLabel = row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] ?? row.paymentMethod : '—';
+        return [
+          formatDateTime(row.startTime),
+          row.clientName,
+          row.serviceName,
+          formatCurrency(row.amount),
+          formatCurrency(row.commissionAmount),
+          methodLabel,
+          collaborator,
+        ];
+      }),
+    ];
 
     const csvContent = '\ufeff' + lines.map((line) => line.map(escape).join(',')).join('\n');
-    const filenameParts = [
-      'pagos_comisiones',
-      dateFrom || 'inicio',
-      dateTo || 'hoy',
-      collaboratorFilter ? collaboratorFilter.replace(/[^a-z0-9]+/gi, '_') : null,
-    ].filter(Boolean);
+    const filename = `pagos_comisiones_${dateFrom || 'inicio'}_${dateTo || 'hoy'}.csv`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${filenameParts.join('_')}.csv`;
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);

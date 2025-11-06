@@ -2,7 +2,6 @@ import { PropsWithChildren, useEffect, useState } from 'react';
 import {
   Calendar,
   CalendarClock,
-  CalendarPlus,
   Users,
   Scissors,
   CreditCard,
@@ -25,7 +24,6 @@ import CitasProximas from './components/CitasProximas';
 import CitasTerminadas from './components/CitasTerminadas';
 import CitasPendientes from './components/CitasPendientes';
 import Usuarios from './components/Usuarios';
-import CreateBooking from './pages/CreateBooking';
 import { ensureSession, logout as remoteLogout } from './lib/auth';
 import { API_BASE_URL } from './lib/api';
 import { invalidateQuery, invalidateQueriesMatching } from './lib/data-store';
@@ -92,7 +90,6 @@ function AuthGuard({ children }: PropsWithChildren) {
 
 const baseMenuItems = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
-  { id: 'crear-cita', label: 'Crear cita', icon: CalendarPlus },
   { id: 'citas-pendientes', label: 'Citas pendientes', icon: CalendarClock },
   { id: 'citas-proximas', label: 'Citas próximas', icon: Calendar },
   { id: 'citas-terminadas', label: 'Citas terminadas', icon: CheckCircle2 },
@@ -137,6 +134,45 @@ function AppShell() {
       setActiveSection('dashboard');
     }
   }, [activeSection]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return () => undefined;
+    }
+
+    const normalizePath = (value: string) => value.replace(/^\/+/g, '').replace(/\/+$/g, '').toLowerCase();
+    const path = normalizePath(window.location.pathname);
+    const mapped: Record<string, string> = {
+      '': 'dashboard',
+      dashboard: 'dashboard',
+      'citas-pendientes': 'citas-pendientes',
+      'citas-proximas': 'citas-proximas',
+      'citas-terminadas': 'citas-terminadas',
+      servicios: 'servicios',
+      pagos: 'pagos',
+      'pagos-y-comision': 'pagos',
+      inventario: 'inventario',
+      usuarios: 'usuarios',
+    };
+
+    let nextSection = mapped[path] ?? null;
+    if (!nextSection && path.includes('crear-cita')) {
+      nextSection = 'citas-pendientes';
+      window.history.replaceState(null, '', '/citas-pendientes');
+    }
+
+    if (nextSection) {
+      if (nextSection === 'usuarios' && !isAdmin) {
+        setActiveSection('dashboard');
+      } else if (!SHOW_INVENTORY && nextSection === 'inventario') {
+        setActiveSection('dashboard');
+      } else {
+        setActiveSection(nextSection);
+      }
+    }
+
+    return () => undefined;
+  }, [isAdmin]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -273,6 +309,14 @@ function AppShell() {
     return () => window.removeEventListener('navigate-to-citas', handleNavigateToCitas);
   }, []);
 
+  useEffect(() => {
+    const handleNavigateToPending = () => {
+      setActiveSection('citas-pendientes');
+    };
+    window.addEventListener('dashboard:navigate:citas-pendientes', handleNavigateToPending);
+    return () => window.removeEventListener('dashboard:navigate:citas-pendientes', handleNavigateToPending);
+  }, []);
+
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
@@ -300,8 +344,6 @@ function AppShell() {
         return <CitasTerminadas />;
       case 'citas-pendientes':
         return <CitasPendientes />;
-      case 'crear-cita':
-        return <CreateBooking />;
       case 'servicios':
         return <Servicios />;
       case 'pagos':

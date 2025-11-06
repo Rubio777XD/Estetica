@@ -10,10 +10,10 @@ La última iteración incorpora un flujo integral para confirmar y terminar cita
 
 - Correo de confirmación con HTML responsivo, metadatos `schema.org/Event` y archivo `.ics` para que Gmail y Google Calendar lo detecten automáticamente como evento.
 - Invitaciones múltiples para hasta tres colaboradoras por cita, con historial visible y autoconfirmación de la primera persona que acepta.
-- Modal de cancelación con doble confirmación que bloquea cancelaciones accidentales.
+- Cancelación inmediata (sin pop-up intermedio) tanto en próximas como en pendientes, invalidando estadísticas y resúmenes al instante.
 - Registro obligatorio de quién completó el servicio cuando se marca como terminado (`completedBy`).
 - Generación dinámica de horarios en la landing considerando los horarios del salón y bloqueando espacios ocupados.
-- Interfaz depurada: cards de servicios sin imágenes redundantes y dashboard sin acciones obsoletas.
+- Interfaz depurada: cards de servicios sin imágenes redundantes, dashboard con widgets simétricos (máx. 3 ítems visibles) y sin acciones obsoletas.
 
 ## Tabla de contenidos
 - [✨ Actualización – Gestión avanzada de citas](#-actualización--gestión-avanzada-de-citas)
@@ -58,6 +58,7 @@ Backend API (Express, 3000) ───────────────▶ Neo
 - Detecta la cookie de sesión al montar (`fetchMe`) y habilita el botón **Ir al Dashboard**; si la URL incluye `?auth=dev`, redirige automáticamente al panel tras validar la sesión.
 - Formulario de agendado con pickers nativos (`date`/`time`), validación básica y envío a `/api/public/bookings` usando cookies HttpOnly. Tras crear la cita, se emite `booking:created` y el Dashboard refresca **Citas pendientes** vía SSE.
 - Permite login rápido (`/api/login`) con `credentials:"include"`, cierre de sesión (`/api/logout`) y navegación suave entre secciones lazy-loaded.
+- Footer corporativo reutilizable en tres columnas con branding, lista de servicios y datos de contacto presente en todas las secciones.
 
 ### Dashboard (`Dashboard/`, puerto 3003)
 - Panel administrativo con guardia de sesión (`ensureSession`) y `apiFetch` centralizado que agrega `credentials:"include"` y despacha el evento `dashboard:unauthorized` ante cualquier 401.
@@ -65,8 +66,8 @@ Backend API (Express, 3000) ───────────────▶ Neo
 - Secciones principales:
   - **Dashboard:** tablero centrado con tarjetas de "Citas de hoy", "Servicios más solicitados" y resúmenes compactos de próximas y pendientes.
   - **Servicios:** CRUD optimista con validaciones de duración/precio, campo opcional `description` (máx. 500 caracteres) y auto-refetch tras SSE.
-  - **Citas próximas:** listado asignado que permite confirmar, editar precio con persistencia, registrar cobro y comisión en un modal de cobro y cancelar con confirmación explícita.
-  - **Citas pendientes:** tabla paginada con columnas Cliente/Servicio/Fecha/Notas/Acciones, modal de asignación por correo, edición completa (cliente, servicio, fecha/hora, notas) con pickers nativos y cancelación con modal.
+  - **Citas próximas:** listado asignado que permite confirmar, editar precio con persistencia, registrar cobro y comisión en un modal de cobro y cancelar al instante.
+  - **Citas pendientes:** tabla paginada con columnas Cliente/Servicio/Fecha/Notas/Acciones, modal de asignación por correo, edición completa (cliente, servicio, fecha/hora, notas) con pickers nativos y cancelación inmediata.
   - **Citas terminadas:** historial filtrable por rango con montos pagados (suma de `payments`).
   - **Pagos & Comisiones:** reporte filtrable por rango, totales del periodo, totales de comisión y exportación CSV lista para Excel.
   - **Inventario:** tabla full-width, resaltado de stock bajo y CRUD optimista que sincroniza métricas.

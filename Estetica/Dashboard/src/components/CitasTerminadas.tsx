@@ -156,12 +156,9 @@ export default function CitasTerminadas() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Citas terminadas</h2>
-          <p className="text-sm text-gray-500">
-            Consulta el historial de citas marcadas como realizadas y sus pagos registrados.
-          </p>
-        </div>
+        <p className="text-sm text-gray-500">
+          Consulta el historial de citas marcadas como realizadas y sus pagos registrados.
+        </p>
         <Card className="border border-gray-200">
           <CardContent className="py-6">
             <div className="grid gap-4 md:grid-cols-2">

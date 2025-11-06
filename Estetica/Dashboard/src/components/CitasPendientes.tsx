@@ -2,16 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2, MailPlus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -121,7 +111,7 @@ export default function CitasPendientes() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [editDialog, setEditDialog] = useState<EditDialogState | null>(null);
   const [editLoading, setEditLoading] = useState(false);
-  const [cancelDialog, setCancelDialog] = useState<BookingWithRelations | null>(null);
+  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
 
   const { data: bookings = [], status, error, refetch, setData } = useApiQuery<BookingWithRelations[]>(
     PENDING_KEY,
@@ -243,22 +233,24 @@ export default function CitasPendientes() {
     }
   };
 
-  const handleConfirmCancel = async () => {
-    if (!cancelDialog) return;
+  const handleCancel = async (booking: BookingWithRelations) => {
+    setCancelling((prev) => ({ ...prev, [booking.id]: true }));
     try {
-      await apiFetch(`/api/bookings/${cancelDialog.id}/status`, {
+      await apiFetch(`/api/bookings/${booking.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'canceled' }),
       });
       toast.success('Cita cancelada');
-      setData((prev = []) => prev.filter((item) => item.id !== cancelDialog.id));
+      setData((prev = []) => prev.filter((item) => item.id !== booking.id));
       invalidateQueriesMatching('bookings:');
       invalidateQuery('bookings:pending:summary');
+      invalidateQuery('bookings:upcoming:summary');
+      invalidateQuery('stats-overview');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'No fue posible cancelar la cita';
       toast.error(message);
     } finally {
-      setCancelDialog(null);
+      setCancelling((prev) => ({ ...prev, [booking.id]: false }));
     }
   };
 
@@ -371,8 +363,18 @@ export default function CitasPendientes() {
                           <Pencil className="h-4 w-4" />
                           Editar
                         </Button>
-                        <Button size="sm" variant="destructive" className="gap-2" onClick={() => setCancelDialog(booking)}>
-                          <Trash2 className="h-4 w-4" />
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="gap-2"
+                          onClick={() => handleCancel(booking)}
+                          disabled={cancelling[booking.id]}
+                        >
+                          {cancelling[booking.id] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                           Cancelar
                         </Button>
                       </div>
@@ -459,12 +461,9 @@ export default function CitasPendientes() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Citas pendientes</h2>
-          <p className="text-sm text-gray-500">
-            Asigna colaboradoras, ajusta detalles o cancela citas que aún no se han confirmado.
-          </p>
-        </div>
+        <p className="text-sm text-gray-500 max-w-2xl">
+          Asigna colaboradoras, ajusta detalles o cancela citas que aún no se han confirmado.
+        </p>
         <Button variant="outline" onClick={() => refetch()} disabled={status === 'loading'} className="gap-2">
           <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
           Actualizar
@@ -659,31 +658,6 @@ export default function CitasPendientes() {
           ) : null}
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={cancelDialog !== null} onOpenChange={(open) => !open && setCancelDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar cita</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Seguro que quieres eliminar esta cita pendiente? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <AlertDialogCancel
-              onClick={() => setCancelDialog(null)}
-              className="border border-white/10 bg-transparent text-gray-200 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-            >
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 text-white shadow-[0_12px_30px_rgba(220,38,38,0.35)] transition hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-              onClick={handleConfirmCancel}
-            >
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

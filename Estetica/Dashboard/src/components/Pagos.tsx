@@ -244,12 +244,9 @@ export default function Pagos() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Pagos y comisiones</h2>
-          <p className="text-sm text-gray-500">
-            Consulta los pagos registrados y la comisión correspondiente para cada cita realizada.
-          </p>
-        </div>
+        <p className="text-sm text-gray-500 max-w-2xl">
+          Consulta los pagos registrados y la comisión correspondiente para cada cita realizada.
+        </p>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col space-y-1">
             <Label htmlFor="payments-from" className="text-xs font-medium text-gray-600 uppercase tracking-wide">
@@ -293,17 +290,19 @@ export default function Pagos() {
               ))}
             </datalist>
           </div>
-          <Button variant="outline" onClick={handleApplyFilters} className="gap-2">
-            <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
-            Aplicar filtros
-          </Button>
-          <Button variant="outline" onClick={handleClearFilters}>
-            Limpiar
-          </Button>
-          <Button onClick={handleExport} className="gap-2" disabled={rows.length === 0}>
-            <Download className="h-4 w-4" />
-            Exportar CSV
-          </Button>
+          <div className="flex flex-wrap items-center gap-y-2 -ml-2">
+            <Button variant="outline" onClick={handleApplyFilters} className="gap-2 ml-2">
+              <Loader2 className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
+              Aplicar filtros
+            </Button>
+            <Button variant="outline" onClick={handleClearFilters} className="ml-2">
+              Limpiar
+            </Button>
+            <Button onClick={handleExport} className="gap-2 ml-2" disabled={rows.length === 0}>
+              <Download className="h-4 w-4" />
+              Exportar CSV
+            </Button>
+          </div>
         </div>
       </div>
 

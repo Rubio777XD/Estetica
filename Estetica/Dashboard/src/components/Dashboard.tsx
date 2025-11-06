@@ -40,7 +40,7 @@ export default function Dashboard() {
     'bookings:upcoming:summary',
     async () => {
       const response = await apiFetch<{ bookings: BookingWithService[] }>('/api/bookings/upcoming');
-      return response.bookings.slice(0, 5);
+      return response.bookings.slice(0, 3);
     }
   );
 
@@ -53,11 +53,13 @@ export default function Dashboard() {
     'bookings:pending:summary',
     async () => {
       const response = await apiFetch<{ bookings: BookingWithService[] }>('/api/bookings/unassigned');
-      return response.bookings.slice(0, 5);
+      return response.bookings.slice(0, 3);
     }
   );
 
   const topServices = overview?.topServices ?? [];
+  const displayedUpcoming = upcoming.slice(0, 3);
+  const displayedPending = pending.slice(0, 3);
 
   const handleRefreshAll = () => {
     invalidateQuery('stats-overview');
@@ -83,7 +85,8 @@ export default function Dashboard() {
       </div>
 
       <div className={styles.dashboardGrid}>
-        <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
+        <div className={styles.topRow}>
+          <Card className={cn(styles.cardBase, styles.topCard, 'w-full border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
             <CardTitle className={styles.cardTitle}>
               <CalendarDays className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
@@ -120,21 +123,21 @@ export default function Dashboard() {
               )}
             </div>
           </CardContent>
-        </Card>
+          </Card>
 
-        <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
+          <Card className={cn(styles.cardBase, styles.topCard, 'w-full border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
             <CardTitle className={styles.cardTitle}>
               <Clock3 className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
               Citas próximas
             </CardTitle>
-            <p className={styles.subtitle}>Las próximas 5 citas asignadas a colaboradoras.</p>
+            <p className={styles.subtitle}>Las próximas 3 citas asignadas a colaboradoras.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
-            <div className={cn(styles.cardBody, styles.scrollable)}>
+            <div className={styles.cardBody}>
               {upcomingStatus === 'loading' ? (
-                <div className={styles.itemList}>
-                  {Array.from({ length: 5 }).map((_, index) => (
+                <div className={cn(styles.itemList, styles.fixedList)}>
+                  {Array.from({ length: 3 }).map((_, index) => (
                     <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
                   ))}
                 </div>
@@ -147,13 +150,15 @@ export default function Dashboard() {
                     </Button>
                   </div>
                 </div>
-              ) : upcoming.length === 0 ? (
-                <p className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500">
-                  No hay citas próximas asignadas. Asigna nuevas citas desde la sección de pendientes.
-                </p>
+              ) : displayedUpcoming.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500">
+                    No hay citas próximas asignadas. Asigna nuevas citas desde la sección de pendientes.
+                  </p>
+                </div>
               ) : (
-                <div className={styles.itemList}>
-                  {upcoming.map((booking) => (
+                <div className={cn(styles.itemList, styles.fixedList)}>
+                  {displayedUpcoming.map((booking) => (
                     <div key={booking.id} className={styles.itemCard}>
                       <div className={styles.itemHeader}>
                         <p className={styles.itemTitle}>{booking.clientName}</p>
@@ -168,13 +173,16 @@ export default function Dashboard() {
                       ) : null}
                     </div>
                   ))}
+                  {Array.from({ length: Math.max(0, 3 - displayedUpcoming.length) }).map((_, index) => (
+                    <div key={`upcoming-placeholder-${index}`} className={cn(styles.itemCard, styles.placeholderCard)} aria-hidden="true" />
+                  ))}
                 </div>
               )}
             </div>
           </CardContent>
-        </Card>
+          </Card>
 
-        <Card className={cn(styles.cardBase, styles.topCard, 'w-full rounded-none border border-gray-200')}>
+          <Card className={cn(styles.cardBase, styles.topCard, 'w-full border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
             <CardTitle className={styles.cardTitle}>
               <CalendarDays className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
@@ -183,10 +191,10 @@ export default function Dashboard() {
             <p className={styles.subtitle}>Citas sin asignar que requieren atención inmediata.</p>
           </CardHeader>
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
-            <div className={cn(styles.cardBody, styles.scrollable)}>
+            <div className={styles.cardBody}>
               {pendingStatus === 'loading' ? (
-                <div className={styles.itemList}>
-                  {Array.from({ length: 5 }).map((_, index) => (
+                <div className={cn(styles.itemList, styles.fixedList)}>
+                  {Array.from({ length: 3 }).map((_, index) => (
                     <div key={index} className={cn(styles.itemCard, styles.skeleton)} />
                   ))}
                 </div>
@@ -199,13 +207,15 @@ export default function Dashboard() {
                     </Button>
                   </div>
                 </div>
-              ) : pending.length === 0 ? (
-                <p className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500">
-                  No hay citas pendientes por asignar. Las nuevas citas aparecerán aquí automáticamente.
-                </p>
+              ) : displayedPending.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p className="rounded-md border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500">
+                    No hay citas pendientes por asignar. Las nuevas citas aparecerán aquí automáticamente.
+                  </p>
+                </div>
               ) : (
-                <div className={styles.itemList}>
-                  {pending.map((booking) => (
+                <div className={cn(styles.itemList, styles.fixedList)}>
+                  {displayedPending.map((booking) => (
                     <div key={booking.id} className={styles.itemCard}>
                       <p className={styles.itemTitle}>{booking.clientName}</p>
                       <p className={styles.itemMeta}>{booking.service.name}</p>
@@ -215,13 +225,17 @@ export default function Dashboard() {
                       ) : null}
                     </div>
                   ))}
+                  {Array.from({ length: Math.max(0, 3 - displayedPending.length) }).map((_, index) => (
+                    <div key={`pending-placeholder-${index}`} className={cn(styles.itemCard, styles.placeholderCard)} aria-hidden="true" />
+                  ))}
                 </div>
               )}
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
 
-        <Card className={cn(styles.cardBase, styles.servicesCard, styles.fullSpan, 'w-full rounded-none border border-gray-200')}>
+        <Card className={cn(styles.cardBase, styles.servicesCard, 'w-full border border-gray-200')}>
           <CardHeader className="px-4 pt-4 pb-0 space-y-1.5">
             <CardTitle className={styles.cardTitle}>
               <Users className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />

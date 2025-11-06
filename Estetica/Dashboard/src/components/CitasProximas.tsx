@@ -12,16 +12,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -76,7 +66,7 @@ export default function CitasProximas() {
   const [paymentDialog, setPaymentDialog] = useState<PaymentDialogState | null>(null);
   const [confirming, setConfirming] = useState<Record<string, boolean>>({});
   const [completing, setCompleting] = useState<Record<string, boolean>>({});
-  const [cancelDialog, setCancelDialog] = useState<BookingWithRelations | null>(null);
+  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
   const [lastCommissionPct, setLastCommissionPct] = useState<number>(0);
 
   const { data: bookings = [], status, error, refetch, setData } = useApiQuery<BookingWithRelations[]>(
@@ -250,13 +240,8 @@ export default function CitasProximas() {
     }
   };
 
-  const handleRequestCancel = (booking: BookingWithRelations) => {
-    setCancelDialog(booking);
-  };
-
-  const handleConfirmCancel = async () => {
-    if (!cancelDialog) return;
-    const booking = cancelDialog;
+  const handleCancel = async (booking: BookingWithRelations) => {
+    setCancelling((prev) => ({ ...prev, [booking.id]: true }));
     try {
       await apiFetch(`/api/bookings/${booking.id}/status`, {
         method: 'PATCH',
@@ -265,12 +250,14 @@ export default function CitasProximas() {
       toast.success('Cita cancelada');
       removeBookingFromState(booking.id);
       invalidateQueriesMatching('bookings:');
+      invalidateQuery('bookings:upcoming:summary');
       invalidateQuery('bookings:pending:summary');
+      invalidateQuery('stats-overview');
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'No fue posible cancelar la cita';
       toast.error(message);
     } finally {
-      setCancelDialog(null);
+      setCancelling((prev) => ({ ...prev, [booking.id]: false }));
     }
   };
 
@@ -281,6 +268,7 @@ export default function CitasProximas() {
     const isConfirming = confirming[booking.id];
     const isCompleting = completing[booking.id];
     const hasOverride = typeof booking.amountOverride === 'number' && booking.amountOverride > 0;
+    const isCancelling = cancelling[booking.id];
 
     return (
       <Card key={booking.id} className="border border-gray-200 shadow-sm">
@@ -354,8 +342,18 @@ export default function CitasProximas() {
             <Button variant="outline" size="sm" onClick={() => handleOpenPriceDialog(booking)}>
               <Pencil className="h-4 w-4 mr-2" /> Editar precio
             </Button>
-            <Button variant="destructive" size="sm" onClick={() => handleRequestCancel(booking)}>
-              <XCircle className="h-4 w-4 mr-2" /> Cancelar
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleCancel(booking)}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Cancelar
             </Button>
           </div>
         </CardContent>
@@ -410,12 +408,10 @@ export default function CitasProximas() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Citas próximas</h2>
-          <p className="text-sm text-gray-500">
-            Gestiona las citas asignadas y registra el cobro al completarlas. {overrideCount > 0 ? `${overrideCount} citas con monto editado.` : ''}
-          </p>
-        </div>
+        <p className="text-sm text-gray-500 max-w-2xl">
+          Gestiona las citas asignadas y registra el cobro al completarlas.{' '}
+          {overrideCount > 0 ? `${overrideCount} citas con monto editado.` : ''}
+        </p>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           Actualizar
         </Button>
@@ -575,26 +571,6 @@ export default function CitasProximas() {
           ) : null}
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={cancelDialog !== null} onOpenChange={(open) => !open && setCancelDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar cita</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Seguro que quieres cancelar? Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <AlertDialogCancel onClick={() => setCancelDialog(null)}>Atrás</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 text-white shadow-[0_12px_30px_rgba(220,38,38,0.35)] transition hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
-              onClick={handleConfirmCancel}
-            >
-              Cancelar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

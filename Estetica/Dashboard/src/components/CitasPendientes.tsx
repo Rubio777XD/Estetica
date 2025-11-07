@@ -605,7 +605,9 @@ export default function CitasPendientes() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="modal--create-appointment max-w-none w-[92vw] md:w-[clamp(520px,70vw,740px)] lg:w-[clamp(560px,50vw,860px)] max-h-[85vh] overflow-y-auto rounded-[10px] md:rounded-[12px]"
+        >
           <DialogHeader>
             <DialogTitle>Crear cita</DialogTitle>
             <DialogDescription>Registra una nueva cita manualmente sin salir de Citas pendientes.</DialogDescription>
@@ -644,7 +646,9 @@ export default function CitasPendientes() {
         open={directAssignDialog !== null}
         onOpenChange={(open) => !open && !directAssignLoading && setDirectAssignDialog(null)}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="modal--assign-now max-w-none w-[92vw] md:w-[clamp(520px,70vw,740px)] lg:w-[clamp(560px,50vw,860px)] max-h-[85vh] overflow-y-auto rounded-[10px] md:rounded-[12px]"
+        >
           <DialogHeader>
             <DialogTitle>Asignar sin confirmación</DialogTitle>
             <DialogDescription>

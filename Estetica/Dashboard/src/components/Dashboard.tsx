@@ -169,9 +169,21 @@ export default function Dashboard() {
                       </div>
                       <p className={styles.itemMeta}>{booking.service.name}</p>
                       <p className={styles.itemMeta}>{formatDateTime(booking.startTime)}</p>
-                      {booking.assignedEmail ? (
-                        <p className={cn(styles.itemNote, styles.truncate)}>Colaboradora: {booking.assignedEmail}</p>
-                      ) : null}
+                      {(() => {
+                        const collaboratorName = booking.performedByName?.trim();
+                        const collaboratorEmail = booking.assignedEmail;
+                        if (!collaboratorName && !collaboratorEmail) {
+                          return null;
+                        }
+                        const label = collaboratorName
+                          ? collaboratorEmail
+                            ? `${collaboratorName} (${collaboratorEmail})`
+                            : collaboratorName
+                          : collaboratorEmail;
+                        return (
+                          <p className={cn(styles.itemNote, styles.truncate)}>Colaboradora: {label}</p>
+                        );
+                      })()}
                     </div>
                   ))}
                   {Array.from({ length: Math.max(0, 3 - displayedUpcoming.length) }).map((_, index) => (

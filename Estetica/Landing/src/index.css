@@ -3689,6 +3689,12 @@ html {
   box-shadow: 0 25px 50px -12px #000c, 0 0 0 1px #eadcc71a;
 }
 
+@media (min-width: 640px) {
+  .mini-login-modal {
+    width: min(50vw, 28rem);
+  }
+}
+
 .mini-login-modal-backdrop {
   -webkit-backdrop-filter: blur(4px);
   z-index: 999;

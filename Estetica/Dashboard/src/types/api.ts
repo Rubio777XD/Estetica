@@ -25,6 +25,7 @@ export interface Booking {
   notes?: string | null;
   assignedEmail?: string | null;
   assignedAt?: string | null;
+  performedByName?: string | null;
   amountOverride?: number | null;
   invitedEmails?: string[];
   confirmedEmail?: string | null;
@@ -98,7 +99,9 @@ export interface CommissionRow {
   serviceName: string;
   startTime: string;
   assignedEmail?: string | null;
+  assignedName?: string | null;
   commissionAssigneeEmail?: string | null;
+  commissionAssigneeName?: string | null;
   paymentMethod?: PaymentMethod | null;
   paymentCreatedAt?: string | null;
   amount: number;

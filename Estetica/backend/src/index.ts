@@ -196,6 +196,44 @@ const parseInviteEntry = (value: string): InviteEntry => {
 const serializeInviteEntry = (entry: InviteEntry) =>
   JSON.stringify({ email: normalizeEmail(entry.email), name: entry.name ? entry.name.trim() : null });
 
+const getInviteNameForEmail = (invited: string[] | null | undefined, email: string) => {
+  const normalized = normalizeEmail(email);
+  for (const entry of invited ?? []) {
+    const parsed = parseInviteEntry(entry);
+    if (parsed.email === normalized) {
+      if (typeof parsed.name === 'string') {
+        const trimmed = parsed.name.trim();
+        if (trimmed.length > 0) {
+          return trimmed;
+        }
+      }
+      break;
+    }
+  }
+  return null;
+};
+
+const getBookingCollaboratorName = (
+  booking: { invitedEmails?: string[] | null; performedByName?: string | null; assignedEmail?: string | null },
+  email?: string | null
+) => {
+  if (email) {
+    const normalized = normalizeEmail(email);
+    if (booking.assignedEmail && normalizeEmail(booking.assignedEmail) === normalized) {
+      const directName = booking.performedByName?.trim();
+      if (directName && directName.length > 0) {
+        return directName;
+      }
+    }
+    const inviteName = getInviteNameForEmail(booking.invitedEmails, normalized);
+    if (inviteName && inviteName.length > 0) {
+      return inviteName;
+    }
+  }
+  const fallbackName = booking.performedByName?.trim();
+  return fallbackName && fallbackName.length > 0 ? fallbackName : null;
+};
+
 const EMAIL_MATCHER = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
 const extractEmailFromNotes = (notes?: string | null) => {
@@ -391,6 +429,9 @@ app.get(
       return;
     }
 
+    const inviteName = getInviteNameForEmail(assignment.booking.invitedEmails, assignment.email);
+    const collaboratorName = inviteName ?? (await getAssigneeName(assignment.email));
+
     const { updatedAssignment, booking, expiredCount } = await prisma.$transaction(async (tx) => {
       const updated = await tx.assignment.update({
         where: { id: assignment.id },
@@ -399,7 +440,12 @@ app.get(
 
       const updatedBooking = await tx.booking.update({
         where: { id: assignment.bookingId },
-        data: { assignedEmail: assignment.email, assignedAt: new Date(), confirmedEmail: assignment.email },
+        data: {
+          assignedEmail: assignment.email,
+          assignedAt: new Date(),
+          confirmedEmail: assignment.email,
+          performedByName: collaboratorName ?? assignment.booking.performedByName ?? null,
+        },
         include: { service: true },
       });
 
@@ -766,6 +812,10 @@ const assignmentCreateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
 });
 
+const directAssignmentSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+
 const bookingQuerySchema = z.object({
   from: z
     .string()
@@ -808,6 +858,7 @@ const commissionQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  collaborator: z.string().trim().min(1).max(120).optional(),
   collaboratorEmail: z.string().email().optional(),
 });
 
@@ -857,6 +908,7 @@ protectedRouter.get(
     const bookings = await prisma.booking.findMany({
       where: {
         assignedEmail: null,
+        performedByName: null,
         status: { in: ACTIVE_BOOKING_STATUSES },
       },
       orderBy: { startTime: 'asc' },
@@ -881,8 +933,8 @@ protectedRouter.get(
 
     const bookings = await prisma.booking.findMany({
       where: {
-        assignedEmail: { not: null },
         status: { in: ACTIVE_BOOKING_STATUSES },
+        OR: [{ assignedEmail: { not: null } }, { performedByName: { not: null } }],
       },
       orderBy: { startTime: 'asc' },
       include: { service: true, payments: true },
@@ -1120,6 +1172,52 @@ protectedRouter.patch(
     broadcastEvent('booking:status', { id: booking.id, status: booking.status }, 'auth');
     broadcastEvent('stats:invalidate', { reason: 'booking-status' }, 'auth');
     return sendSuccess(res, { booking }, 'Estado actualizado');
+  })
+);
+
+protectedRouter.post(
+  '/bookings/:id/assign-direct',
+  asyncHandler(async (req, res) => {
+    const parsed = directAssignmentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Nombre inválido', parsed.error.flatten());
+    }
+
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) {
+      throw new HttpError(404, 'Cita no encontrada');
+    }
+
+    if (booking.assignedEmail) {
+      throw new HttpError(409, 'La cita ya está asignada');
+    }
+
+    if (booking.status === BookingStatus.canceled || booking.status === BookingStatus.done) {
+      throw new HttpError(409, 'No es posible asignar esta cita en su estado actual');
+    }
+
+    const collaboratorName = parsed.data.name.trim();
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.assignment.updateMany({
+        where: { bookingId: booking.id, status: AssignmentStatus.pending },
+        data: { status: AssignmentStatus.expired },
+      });
+
+      return tx.booking.update({
+        where: { id: booking.id },
+        data: {
+          performedByName: collaboratorName,
+          assignedAt: booking.assignedAt ?? new Date(),
+        },
+        include: { service: true, payments: true },
+      });
+    });
+
+    broadcastEvent('booking:assignment:accepted', { bookingId: updated.id }, 'auth');
+    broadcastEvent('booking:updated', { id: updated.id }, 'auth');
+
+    return sendSuccess(res, { booking: updated }, 'Cita asignada manualmente');
   })
 );
 
@@ -1420,7 +1518,9 @@ type CommissionRow = {
   serviceName: string;
   startTime: string;
   assignedEmail: string | null | undefined;
+  assignedName: string | null;
   commissionAssigneeEmail: string | null;
+  commissionAssigneeName: string | null;
   paymentMethod: PaymentMethod | null;
   paymentCreatedAt: Date | null;
   amount: number;
@@ -1445,6 +1545,10 @@ const mapBookingsToCommissionRows = (
     const amount = latestPayment?.amount ?? booking.amountOverride ?? booking.service.price;
     const commissionAmount = latestCommission?.amount ?? 0;
     const percentage = latestCommission?.percentage ?? 0;
+    const assignedName = getBookingCollaboratorName(booking, booking.assignedEmail ?? undefined);
+    const commissionAssigneeName = latestCommission?.assigneeEmail
+      ? getBookingCollaboratorName(booking, latestCommission.assigneeEmail)
+      : null;
 
     return {
       bookingId: booking.id,
@@ -1452,7 +1556,9 @@ const mapBookingsToCommissionRows = (
       serviceName: booking.service.name,
       startTime: booking.startTime.toISOString(),
       assignedEmail: booking.assignedEmail,
+      assignedName,
       commissionAssigneeEmail: latestCommission?.assigneeEmail ?? null,
+      commissionAssigneeName,
       paymentMethod: latestPayment?.method ?? null,
       paymentCreatedAt: latestPayment?.createdAt ?? null,
       amount: roundCurrency(amount ?? 0),
@@ -1503,7 +1609,7 @@ protectedRouter.get(
       throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
     }
 
-    const { from, to, collaboratorEmail } = parsed.data;
+    const { from, to, collaborator, collaboratorEmail } = parsed.data;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.done,
     };
@@ -1518,12 +1624,22 @@ protectedRouter.get(
       }
     }
 
+    const searchOr: Prisma.BookingWhereInput[] = [];
+
     if (collaboratorEmail) {
       const normalizedCollaborator = normalizeEmail(collaboratorEmail);
-      where.OR = [
-        { assignedEmail: normalizedCollaborator },
-        { commissions: { some: { assigneeEmail: normalizedCollaborator } } },
-      ];
+      searchOr.push({ assignedEmail: normalizedCollaborator });
+      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+    }
+
+    if (collaborator && EMAIL_MATCHER.test(collaborator)) {
+      const normalizedCollaborator = normalizeEmail(collaborator);
+      searchOr.push({ assignedEmail: normalizedCollaborator });
+      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+    }
+
+    if (searchOr.length > 0) {
+      where.OR = searchOr;
     }
 
     const bookings = await prisma.booking.findMany({
@@ -1534,20 +1650,38 @@ protectedRouter.get(
     });
 
     const rows = mapBookingsToCommissionRows(bookings);
-    const totalAmount = rows.reduce((sum, item) => sum + item.amount, 0);
-    const totalCommission = rows.reduce((sum, item) => sum + item.commissionAmount, 0);
+    const searchTerm = collaborator?.trim().toLowerCase() ?? collaboratorEmail?.trim().toLowerCase() ?? null;
+    const filteredRows = searchTerm
+      ? rows.filter((row) => {
+          const candidates = [
+            row.assignedName,
+            row.assignedEmail ?? null,
+            row.commissionAssigneeName,
+            row.commissionAssigneeEmail,
+          ]
+            .filter((value): value is string => Boolean(value))
+            .map((value) => value.toLowerCase());
+          return candidates.some((value) => value.includes(searchTerm));
+        })
+      : rows;
 
-    const collaborators = rows
-      .map((row) => row.assignedEmail ?? row.commissionAssigneeEmail ?? null)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const totalAmount = filteredRows.reduce((sum, item) => sum + item.amount, 0);
+    const totalCommission = filteredRows.reduce((sum, item) => sum + item.commissionAmount, 0);
+
+    const collaboratorSet = new Set<string>();
+    filteredRows.forEach((row) => {
+      [row.assignedName, row.assignedEmail, row.commissionAssigneeName, row.commissionAssigneeEmail]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .forEach((value) => collaboratorSet.add(value.trim()));
+    });
 
     return sendSuccess(
       res,
       {
-        rows,
+        rows: filteredRows,
         totalAmount: roundCurrency(totalAmount),
         totalCommission: roundCurrency(totalCommission),
-        collaborators: Array.from(new Set(collaborators)).sort((a, b) => a.localeCompare(b)),
+        collaborators: Array.from(collaboratorSet).sort((a, b) => a.localeCompare(b)),
       },
       'Pagos y comisiones'
     );

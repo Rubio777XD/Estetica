@@ -859,7 +859,7 @@ html {
   background: #000000;
   border: 1px solid rgba(234, 220, 199, 0.3);
   border-radius: 16px;
-  box-shadow: 
+  box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.8),
     0 0 0 1px rgba(234, 220, 199, 0.1);
   backdrop-filter: blur(16px);
@@ -868,6 +868,12 @@ html {
   width: 100%;
   max-width: 28rem;
   margin: 1rem;
+}
+
+@media (min-width: 640px) {
+  .mini-login-modal {
+    width: min(50vw, 28rem);
+  }
 }
 
 .mini-login-modal-backdrop {

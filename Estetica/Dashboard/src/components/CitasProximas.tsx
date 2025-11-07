@@ -284,7 +284,7 @@ export default function CitasProximas() {
           <Badge className={statusVariant}>{statusLabel}</Badge>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <span className="text-xs text-gray-500 uppercase">Servicio</span>
               <p className="text-sm font-medium text-gray-900">{booking.service.name}</p>
@@ -302,6 +302,15 @@ export default function CitasProximas() {
                   </Badge>
                 ) : null}
               </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-500 uppercase">Colaboradora</span>
+              <p className="text-sm font-medium text-gray-900">
+                {booking.performedByName ?? booking.assignedEmail ?? 'Por asignar'}
+              </p>
+              {booking.performedByName && booking.assignedEmail ? (
+                <p className="text-xs text-gray-500">{booking.assignedEmail}</p>
+              ) : null}
             </div>
           </div>
 
@@ -337,7 +346,7 @@ export default function CitasProximas() {
               ) : (
                 <BadgeCheck className="h-4 w-4 mr-2" />
               )}
-              Marcar como realizada
+              Terminar cita
             </Button>
             <Button variant="outline" size="sm" onClick={() => handleOpenPriceDialog(booking)}>
               <Pencil className="h-4 w-4 mr-2" /> Editar precio
@@ -471,7 +480,7 @@ export default function CitasProximas() {
           <DialogHeader>
             <DialogTitle>Registrar cobro</DialogTitle>
             <DialogDescription>
-              Confirma el pago, la comisión y marca la cita como realizada.
+              Confirma el pago, la comisión y termina la cita.
             </DialogDescription>
           </DialogHeader>
           {paymentDialog ? (

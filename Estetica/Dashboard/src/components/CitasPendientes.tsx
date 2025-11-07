@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, Loader2, MailPlus, Pencil, Trash2 } from 'lucide-react';
+import { CalendarPlus, Loader2, MailPlus, Pencil, Trash2, UserCheck } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -33,6 +33,11 @@ type BookingWithRelations = Booking & { assignments?: Assignment[] | null };
 type AssignDialogState = {
   booking: BookingWithRelations;
   email: string;
+  name: string;
+};
+
+type DirectAssignDialogState = {
+  booking: BookingWithRelations;
   name: string;
 };
 
@@ -116,6 +121,8 @@ export default function CitasPendientes() {
   const [currentPage, setCurrentPage] = useState(1);
   const [assignDialog, setAssignDialog] = useState<AssignDialogState | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [directAssignDialog, setDirectAssignDialog] = useState<DirectAssignDialogState | null>(null);
+  const [directAssignLoading, setDirectAssignLoading] = useState(false);
   const [editDialog, setEditDialog] = useState<EditDialogState | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
@@ -192,6 +199,10 @@ export default function CitasPendientes() {
     setAssignDialog({ booking, email: latest?.email ?? '', name: '' });
   };
 
+  const openDirectAssignDialog = (booking: BookingWithRelations) => {
+    setDirectAssignDialog({ booking, name: '' });
+  };
+
   const handleAssignBooking = async () => {
     if (!assignDialog) return;
     const { booking, email, name } = assignDialog;
@@ -226,6 +237,35 @@ export default function CitasPendientes() {
       toast.error(message);
     } finally {
       setAssignLoading(false);
+    }
+  };
+
+  const handleDirectAssign = async () => {
+    if (!directAssignDialog) return;
+    const { booking, name } = directAssignDialog;
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0) {
+      toast.error('Ingresa el nombre de la colaboradora');
+      return;
+    }
+    setDirectAssignLoading(true);
+    try {
+      await apiFetch<{ booking: BookingWithRelations }>(`/api/bookings/${booking.id}/assign-direct`, {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      toast.success('Cita asignada sin confirmación');
+      setData((prev = []) => prev.filter((item) => item.id !== booking.id));
+      invalidateQuery(PENDING_KEY);
+      invalidateQuery('bookings:pending:summary');
+      invalidateQuery('bookings:upcoming:summary');
+      invalidateQueriesMatching('bookings:');
+      setDirectAssignDialog(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'No fue posible asignar la cita';
+      toast.error(message);
+    } finally {
+      setDirectAssignLoading(false);
     }
   };
 
@@ -417,6 +457,16 @@ export default function CitasPendientes() {
                           <MailPlus className="h-4 w-4" />
                           Invitar personas
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="gap-2"
+                          onClick={() => openDirectAssignDialog(booking)}
+                          disabled={directAssignLoading}
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          Asignar sin confirmación
+                        </Button>
                         <Button size="sm" variant="outline" className="gap-2" onClick={() => openEditDialog(booking)}>
                           <Pencil className="h-4 w-4" />
                           Editar
@@ -587,6 +637,52 @@ export default function CitasPendientes() {
               {createFormState.isSubmitting ? 'Creando cita…' : 'Crear cita'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={directAssignDialog !== null}
+        onOpenChange={(open) => !open && !directAssignLoading && setDirectAssignDialog(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asignar sin confirmación</DialogTitle>
+            <DialogDescription>
+              Registra manualmente a la colaboradora responsable de la cita sin enviar una invitación.
+            </DialogDescription>
+          </DialogHeader>
+          {directAssignDialog ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="direct-assign-name">Nombre de la colaboradora</Label>
+                <Input
+                  id="direct-assign-name"
+                  value={directAssignDialog.name}
+                  onChange={(event) =>
+                    setDirectAssignDialog((prev) =>
+                      prev ? { ...prev, name: event.target.value } : prev
+                    )
+                  }
+                  disabled={directAssignLoading}
+                  placeholder="Nombre completo"
+                  autoFocus
+                />
+              </div>
+
+              <DialogFooter className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setDirectAssignDialog(null)}
+                  disabled={directAssignLoading}
+                >
+                  Cancelar
+                </Button>
+                <Button onClick={handleDirectAssign} disabled={directAssignLoading}>
+                  {directAssignLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Asignar ahora'}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 

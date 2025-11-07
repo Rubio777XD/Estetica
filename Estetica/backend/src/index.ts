@@ -860,6 +860,7 @@ const commissionQuerySchema = z.object({
     .optional(),
   collaborator: z.string().trim().min(1).max(120).optional(),
   collaboratorEmail: z.string().email().optional(),
+  q: z.string().trim().min(1).max(120).optional(),
 });
 
 protectedRouter.get(
@@ -1568,6 +1569,73 @@ const mapBookingsToCommissionRows = (
   });
 };
 
+const getCollaboratorDetailsFromRow = (row: CommissionRow) => {
+  const nameCandidate = [row.assignedName, row.commissionAssigneeName].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
+  const emailCandidate = [row.assignedEmail, row.commissionAssigneeEmail].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
+
+  return {
+    name: nameCandidate?.trim() ?? null,
+    email: emailCandidate?.trim() ?? null,
+  };
+};
+
+const getCollaboratorDisplayFromRow = (row: CommissionRow) => {
+  const details = getCollaboratorDetailsFromRow(row);
+  if (details.name) {
+    return details.name;
+  }
+  return details.email ?? '';
+};
+
+const filterRowsByCollaborator = (
+  rows: CommissionRow[],
+  collaborator?: string | null,
+  collaboratorEmail?: string | null,
+) => {
+  const searchTerm = collaborator?.trim().toLowerCase() ?? collaboratorEmail?.trim().toLowerCase() ?? null;
+  if (!searchTerm) {
+    return rows;
+  }
+
+  return rows.filter((row) => {
+    const values = [
+      row.assignedName,
+      row.assignedEmail ?? null,
+      row.commissionAssigneeName,
+      row.commissionAssigneeEmail,
+    ]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim().toLowerCase());
+    return values.some((value) => value.includes(searchTerm));
+  });
+};
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+};
+
+const currencyFormatter = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  minimumFractionDigits: 0,
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat('es-MX', {
+  timeZone: DEFAULT_TZ,
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+const formatCurrencyValue = (value: number) => currencyFormatter.format(value);
+
+const formatDateTimeValue = (value: string | Date) =>
+  dateTimeFormatter.format(typeof value === 'string' ? new Date(value) : value);
+
 protectedRouter.post(
   '/commissions',
   asyncHandler(async (req, res) => {
@@ -1609,7 +1677,8 @@ protectedRouter.get(
       throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
     }
 
-    const { from, to, collaborator, collaboratorEmail } = parsed.data;
+    const { from, to, collaborator, collaboratorEmail, q } = parsed.data;
+    const collaboratorQuery = q ?? collaborator ?? null;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.done,
     };
@@ -1632,8 +1701,8 @@ protectedRouter.get(
       searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
     }
 
-    if (collaborator && EMAIL_MATCHER.test(collaborator)) {
-      const normalizedCollaborator = normalizeEmail(collaborator);
+    if (collaboratorQuery && EMAIL_MATCHER.test(collaboratorQuery)) {
+      const normalizedCollaborator = normalizeEmail(collaboratorQuery);
       searchOr.push({ assignedEmail: normalizedCollaborator });
       searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
     }
@@ -1650,20 +1719,7 @@ protectedRouter.get(
     });
 
     const rows = mapBookingsToCommissionRows(bookings);
-    const searchTerm = collaborator?.trim().toLowerCase() ?? collaboratorEmail?.trim().toLowerCase() ?? null;
-    const filteredRows = searchTerm
-      ? rows.filter((row) => {
-          const candidates = [
-            row.assignedName,
-            row.assignedEmail ?? null,
-            row.commissionAssigneeName,
-            row.commissionAssigneeEmail,
-          ]
-            .filter((value): value is string => Boolean(value))
-            .map((value) => value.toLowerCase());
-          return candidates.some((value) => value.includes(searchTerm));
-        })
-      : rows;
+    const filteredRows = filterRowsByCollaborator(rows, collaboratorQuery, collaboratorEmail);
 
     const totalAmount = filteredRows.reduce((sum, item) => sum + item.amount, 0);
     const totalCommission = filteredRows.reduce((sum, item) => sum + item.commissionAmount, 0);
@@ -1696,7 +1752,8 @@ protectedRouter.get(
       throw new HttpError(400, 'Parámetros inválidos', parsed.error.flatten());
     }
 
-    const { from, to, collaboratorEmail } = parsed.data;
+    const { from, to, collaboratorEmail, collaborator, q } = parsed.data;
+    const collaboratorQuery = q ?? collaborator ?? null;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.done,
     };
@@ -1711,12 +1768,22 @@ protectedRouter.get(
       }
     }
 
+    const searchOr: Prisma.BookingWhereInput[] = [];
+
     if (collaboratorEmail) {
       const normalizedCollaborator = normalizeEmail(collaboratorEmail);
-      where.OR = [
-        { assignedEmail: normalizedCollaborator },
-        { commissions: { some: { assigneeEmail: normalizedCollaborator } } },
-      ];
+      searchOr.push({ assignedEmail: normalizedCollaborator });
+      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+    }
+
+    if (collaboratorQuery && EMAIL_MATCHER.test(collaboratorQuery)) {
+      const normalizedCollaborator = normalizeEmail(collaboratorQuery);
+      searchOr.push({ assignedEmail: normalizedCollaborator });
+      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+    }
+
+    if (searchOr.length > 0) {
+      where.OR = searchOr;
     }
 
     const bookings = await prisma.booking.findMany({
@@ -1726,7 +1793,8 @@ protectedRouter.get(
     });
 
     const rows = mapBookingsToCommissionRows(bookings);
-    const headers = ['Fecha', 'Cliente', 'Servicio', 'Total cita', 'Comisión', 'Método', 'Colaboradora'];
+    const filteredRows = filterRowsByCollaborator(rows, collaboratorQuery, collaboratorEmail);
+    const headers = ['Fecha', 'Cliente', 'Servicio', 'Total de la cita', 'Comisión', 'Método', 'Colaboradora'];
     const csvLines = [headers.join(',')];
 
     const escape = (value: string | number | null | undefined) => {
@@ -1738,20 +1806,22 @@ protectedRouter.get(
       return stringValue;
     };
 
-    for (const row of rows) {
+    for (const row of filteredRows) {
+      const methodLabel = row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] : '—';
+      const collaboratorDisplay = getCollaboratorDisplayFromRow(row);
       const values = [
-        escape(new Date(row.startTime).toISOString()),
+        escape(formatDateTimeValue(row.startTime)),
         escape(row.clientName),
         escape(row.serviceName),
-        escape(row.amount.toFixed(2)),
-        escape(row.commissionAmount.toFixed(2)),
-        escape(row.paymentMethod ?? ''),
-        escape(row.assignedEmail ?? ''),
+        escape(formatCurrencyValue(row.amount)),
+        escape(formatCurrencyValue(row.commissionAmount)),
+        escape(methodLabel),
+        escape(collaboratorDisplay),
       ];
       csvLines.push(values.join(','));
     }
 
-    const csvContent = csvLines.join('\n');
+    const csvContent = '\ufeff' + csvLines.join('\n');
     const filename = `pagos_comisiones_${from ?? 'inicio'}_${to ?? 'hoy'}.csv`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

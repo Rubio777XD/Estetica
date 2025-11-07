@@ -1,5 +1,9 @@
 # Registro de cambios
 
+# 2025-11-07
+- Reducidos los modales de "Crear cita" y "Asignar sin confirmación" para ajustarse a los nuevos anchos responsivos y mantener el scroll interno.
+- Actualizada la vista de Pagos y comisión para mostrar el nombre de la colaboradora (con respaldo en correo), mejorar el filtrado por nombre o correo y actualizar la exportación CSV acorde a los filtros aplicados.
+
 # 2025-11-06
 - Ajustado el bloque "Servicios más solicitados" del dashboard para mostrar máximo tres elementos sin scroll, conservando la altura con placeholders y alineando el estilo con "Citas próximas".
 - Rediseñada la vista de creación de citas eliminando el card interno, expandiendo el formulario a dos columnas en desktop y manteniendo un flujo de una sola columna en móviles.

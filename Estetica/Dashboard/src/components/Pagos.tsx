@@ -18,6 +18,47 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   transfer: 'Transferencia',
 };
 
+const getCollaboratorDisplay = (collaborator?: { name?: string | null; email?: string | null }) => {
+  const name = collaborator?.name?.trim();
+  if (name) {
+    return name;
+  }
+  const email = collaborator?.email?.trim();
+  return email ?? '';
+};
+
+const getRowCollaboratorDetails = (row: CommissionRow) => {
+  const nameCandidate = [row.assignedName, row.commissionAssigneeName].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
+  const emailCandidate = [row.assignedEmail, row.commissionAssigneeEmail].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
+
+  return {
+    name: nameCandidate?.trim(),
+    email: emailCandidate?.trim(),
+  };
+};
+
+const rowMatchesCollaboratorQuery = (row: CommissionRow, query: string) => {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  const candidates = [
+    row.assignedName,
+    row.assignedEmail ?? null,
+    row.commissionAssigneeName,
+    row.commissionAssigneeEmail,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
+
+  return candidates.some((value) => value.includes(normalized));
+};
+
 const today = new Date();
 const initialFrom = toDateKey(new Date(today.getFullYear(), today.getMonth(), 1));
 const initialTo = toDateKey(today);
@@ -68,7 +109,7 @@ export default function Pagos() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
-    if (collaboratorFilter) params.set('collaborator', collaboratorFilter);
+    if (collaboratorFilter) params.set('q', collaboratorFilter);
     const query = params.toString();
     return apiFetch<CommissionsResponse>(`/api/commissions${query ? `?${query}` : ''}`);
   });
@@ -76,6 +117,13 @@ export default function Pagos() {
   const rows = commissionsResponse?.rows ?? [];
   const totalAmount = commissionsResponse?.totalAmount ?? 0;
   const totalCommission = commissionsResponse?.totalCommission ?? 0;
+  const filteredRows = useMemo(() => {
+    if (!collaboratorFilter.trim()) {
+      return rows;
+    }
+
+    return rows.filter((row) => rowMatchesCollaboratorQuery(row, collaboratorFilter));
+  }, [rows, collaboratorFilter]);
   const collaboratorOptions = useMemo(() => {
     const values = new Set<string>();
     (commissionsResponse?.collaborators ?? [])
@@ -102,7 +150,7 @@ export default function Pagos() {
   }, [dateFrom, dateTo, collaboratorFilter]);
 
   const handleExport = () => {
-    if (rows.length === 0) {
+    if (filteredRows.length === 0) {
       toast.info('No hay datos para exportar.');
       return;
     }
@@ -115,15 +163,12 @@ export default function Pagos() {
       return stringValue;
     };
 
-    const visibleRows = rows;
+    const visibleRows = filteredRows;
     const lines = [
       ['Fecha', 'Cliente', 'Servicio', 'Total de la cita', 'Comisión', 'Método', 'Colaboradora'],
       ...visibleRows.map((row) => {
-        const collaboratorName = row.assignedName ?? row.commissionAssigneeName ?? '';
-        const collaboratorEmail = row.assignedEmail ?? row.commissionAssigneeEmail ?? '';
-        const collaborator = collaboratorEmail && collaboratorName
-          ? `${collaboratorName} <${collaboratorEmail}>`
-          : collaboratorName || collaboratorEmail;
+        const collaboratorDetails = getRowCollaboratorDetails(row);
+        const collaborator = getCollaboratorDisplay(collaboratorDetails);
         const methodLabel = row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] ?? row.paymentMethod : '—';
         return [
           formatDateTime(row.startTime),
@@ -196,7 +241,7 @@ export default function Pagos() {
       );
     }
 
-    if (rows.length === 0) {
+    if (filteredRows.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center border border-dashed rounded-lg p-10 text-center space-y-4">
           <Filter className="h-10 w-10 text-gray-400" />
@@ -223,10 +268,10 @@ export default function Pagos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => {
-              const collaboratorName = row.assignedName ?? row.commissionAssigneeName ?? null;
-              const collaboratorEmail = row.assignedEmail ?? row.commissionAssigneeEmail ?? null;
-              const hasCollaborator = Boolean(collaboratorName || collaboratorEmail);
+            {filteredRows.map((row) => {
+              const collaboratorDetails = getRowCollaboratorDetails(row);
+              const collaboratorDisplay = getCollaboratorDisplay(collaboratorDetails);
+              const hasCollaborator = collaboratorDisplay.length > 0;
 
               return (
                 <TableRow key={row.bookingId}>
@@ -241,11 +286,9 @@ export default function Pagos() {
                   <TableCell className="text-gray-600">
                     {hasCollaborator ? (
                       <div className="flex flex-col">
-                        <span className="font-medium text-gray-900">
-                          {collaboratorName ?? collaboratorEmail}
-                        </span>
-                        {collaboratorEmail && collaboratorName ? (
-                          <span className="text-xs text-gray-500">{collaboratorEmail}</span>
+                        <span className="font-medium text-gray-900">{collaboratorDisplay}</span>
+                        {collaboratorDetails.email && collaboratorDetails.name ? (
+                          <span className="text-xs text-gray-500">{collaboratorDetails.email}</span>
                         ) : null}
                       </div>
                     ) : (
@@ -318,7 +361,7 @@ export default function Pagos() {
             <Button variant="outline" onClick={handleClearFilters} className="ml-2">
               Limpiar
             </Button>
-            <Button onClick={handleExport} className="gap-2 ml-2" disabled={rows.length === 0}>
+            <Button onClick={handleExport} className="gap-2 ml-2" disabled={filteredRows.length === 0}>
               <Download className="h-4 w-4" />
               Exportar CSV
             </Button>

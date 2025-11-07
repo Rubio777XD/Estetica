@@ -1,5 +1,11 @@
 # Changelog
 
+## 2024-11-09
+
+- Normalizado el flujo de `Service` con filtros consistentes (`active` + `deletedAt`) y manejo tipado de errores de Prisma en todas las rutas.
+- Documentado el borrado lógico y los snapshots de servicios en el README para garantizar históricos estables.
+- Ajustadas las validaciones de precio y duración para aceptar valores mayores o iguales a cero conforme al modelo Prisma.
+
 ## 2024-11-07
 
 - Refactorizado el runner `db:verify` para incluir `prisma migrate diff`, captura avanzada de errores y reporte de drift.

@@ -88,6 +88,30 @@ const asyncHandler = (handler: AsyncHandler) => (req: Request, res: Response, ne
   handler(req, res, next).catch(next);
 };
 
+const handlePrismaError = (error: unknown, context: string): never => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    console.error('[prisma] known error', { context, code: error.code, meta: error.meta });
+
+    if (error.code === 'P2025') {
+      throw new HttpError(404, 'Registro no encontrado');
+    }
+
+    if (error.code === 'P2003') {
+      throw new HttpError(409, 'No se puede completar la operación por referencias activas');
+    }
+
+    throw new HttpError(400, 'No se pudo procesar la operación solicitada');
+  }
+
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    console.error('[prisma] validation error', { context, message: error.message });
+    throw new HttpError(400, 'Parámetros inválidos para la operación solicitada');
+  }
+
+  console.error('[prisma] unexpected error', { context, error });
+  throw error;
+};
+
 const normalizeNotes = (notes?: string | null) => {
   if (notes === null) return null;
   if (typeof notes === 'string') {
@@ -545,22 +569,26 @@ const publicRouter = express.Router();
 publicRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
-    const services = await prisma.service.findMany({
-      where: { active: true, deletedAt: null },
-      orderBy: { name: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        price: true,
-        duration: true,
-        description: true,
-        imageUrl: true,
-        highlights: true,
-        updatedAt: true,
-      },
-    });
+    try {
+      const services = await prisma.service.findMany({
+        where: { active: true, deletedAt: null },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          duration: true,
+          description: true,
+          imageUrl: true,
+          highlights: true,
+          updatedAt: true,
+        },
+      });
 
-    return sendSuccess(res, { services }, 'Servicios públicos');
+      return sendSuccess(res, { services }, 'Servicios públicos');
+    } catch (error) {
+      handlePrismaError(error, 'service:list:public');
+    }
   })
 );
 
@@ -649,8 +677,8 @@ const requireRole = (role: Role) => (req: AuthedRequest, _res: Response, next: N
 // Services CRUD
 const serviceSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  price: z.coerce.number().positive(),
-  duration: z.coerce.number().int().min(5).max(480),
+  price: z.coerce.number().min(0),
+  duration: z.coerce.number().int().min(0).max(480),
   description: z.string().trim().max(500).optional().nullable(),
   imageUrl: z
     .string()
@@ -708,11 +736,15 @@ const serviceActiveSchema = z.object({
 protectedRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
-    const services = await prisma.service.findMany({
-      where: { deletedAt: null },
-      orderBy: { name: 'asc' },
-    });
-    return sendSuccess(res, { services }, 'Servicios obtenidos');
+    try {
+      const services = await prisma.service.findMany({
+        where: { deletedAt: null, active: true },
+        orderBy: { name: 'asc' },
+      });
+      return sendSuccess(res, { services }, 'Servicios obtenidos');
+    } catch (error) {
+      handlePrismaError(error, 'service:list:protected');
+    }
   })
 );
 
@@ -733,7 +765,7 @@ protectedRouter.post(
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new HttpError(409, 'Ya existe un servicio con ese nombre');
       }
-      throw error;
+      handlePrismaError(error, 'service:create');
     }
   })
 );
@@ -760,7 +792,7 @@ protectedRouter.put(
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new HttpError(409, 'Ya existe un servicio con ese nombre');
       }
-      throw error;
+      handlePrismaError(error, 'service:update');
     }
   })
 );
@@ -778,45 +810,56 @@ protectedRouter.patch(
       throw new HttpError(404, 'Servicio no encontrado');
     }
 
-    const service = await prisma.service.update({
-      where: { id: req.params.id },
-      data: { active: parsed.data.active },
-    });
+    try {
+      const service = await prisma.service.update({
+        where: { id: req.params.id },
+        data: { active: parsed.data.active },
+      });
 
-    broadcastEvent('service:updated', { id: service.id }, 'all');
-    broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
+      broadcastEvent('service:updated', { id: service.id }, 'all');
+      broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
 
-    const message = parsed.data.active ? 'Servicio activado' : 'Servicio desactivado';
-    return sendSuccess(res, { service }, message);
+      const message = parsed.data.active ? 'Servicio activado' : 'Servicio desactivado';
+      return sendSuccess(res, { service }, message);
+    } catch (error) {
+      handlePrismaError(error, 'service:toggle-active');
+    }
   })
 );
 
 protectedRouter.delete(
   '/services/:id',
   asyncHandler(async (req, res) => {
-    const service = await prisma.$transaction(async (tx) => {
-      const existing = await tx.service.findUnique({ where: { id: req.params.id } });
-      if (!existing || existing.deletedAt) {
-        throw new HttpError(404, 'Servicio no encontrado');
+    try {
+      const service = await prisma.$transaction(async (tx) => {
+        const existing = await tx.service.findUnique({ where: { id: req.params.id } });
+        if (!existing || existing.deletedAt) {
+          throw new HttpError(404, 'Servicio no encontrado');
+        }
+
+        await tx.booking.updateMany({
+          where: { serviceId: existing.id },
+          data: {
+            serviceNameSnapshot: existing.name,
+            servicePriceSnapshot: existing.price,
+          },
+        });
+
+        return tx.service.update({
+          where: { id: req.params.id },
+          data: { active: false, deletedAt: new Date() },
+        });
+      });
+
+      broadcastEvent('service:deleted', { id: req.params.id }, 'all');
+      broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
+      return sendSuccess(res, { deleted: true, service }, 'Servicio eliminado');
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
       }
-
-      await tx.booking.updateMany({
-        where: { serviceId: existing.id },
-        data: {
-          serviceNameSnapshot: existing.name,
-          servicePriceSnapshot: existing.price,
-        },
-      });
-
-      return tx.service.update({
-        where: { id: req.params.id },
-        data: { active: false, deletedAt: new Date() },
-      });
-    });
-
-    broadcastEvent('service:deleted', { id: req.params.id }, 'all');
-    broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
-    return sendSuccess(res, { deleted: true, service }, 'Servicio eliminado');
+      handlePrismaError(error, 'service:delete');
+    }
   })
 );
 

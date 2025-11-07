@@ -570,20 +570,27 @@ publicRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     try {
-      const services = await prisma.service.findMany({
-        where: { active: true, deletedAt: null },
-        orderBy: { name: 'asc' },
-        select: {
-          id: true,
-          name: true,
-          price: true,
-          duration: true,
-          description: true,
-          imageUrl: true,
-          highlights: true,
-          updatedAt: true,
-        },
-      });
+      const allServices = await prisma.service.findMany({ orderBy: { name: 'asc' } });
+      const filtered = filterActiveServices(allServices);
+      const services = filtered.map(({
+        id,
+        name,
+        price,
+        duration,
+        description,
+        imageUrl,
+        highlights,
+        updatedAt,
+      }) => ({
+        id,
+        name,
+        price,
+        duration,
+        description,
+        imageUrl,
+        highlights,
+        updatedAt,
+      }));
 
       return sendSuccess(res, { services }, 'Servicios públicos');
     } catch (error) {
@@ -733,14 +740,40 @@ const serviceActiveSchema = z.object({
   active: z.boolean(),
 });
 
+type SoftDeleteAwareService = {
+  active?: boolean | null;
+  deletedAt?: Date | null;
+};
+
+const filterActiveServices = <T extends SoftDeleteAwareService>(services: T[]): T[] =>
+  services.filter((service) => service.active !== false && (service.deletedAt === undefined || service.deletedAt === null));
+
+const isDeletedAtValidationError = (error: unknown) =>
+  error instanceof Prisma.PrismaClientValidationError && error.message.includes('Unknown argument `deletedAt`');
+
+const softDeleteService = async (tx: Prisma.TransactionClient, id: string) => {
+  try {
+    return await tx.service.update({
+      where: { id },
+      data: { active: false, deletedAt: new Date() },
+    });
+  } catch (error) {
+    if (isDeletedAtValidationError(error)) {
+      return tx.service.update({
+        where: { id },
+        data: { active: false },
+      });
+    }
+    throw error;
+  }
+};
+
 protectedRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     try {
-      const services = await prisma.service.findMany({
-        where: { deletedAt: null, active: true },
-        orderBy: { name: 'asc' },
-      });
+      const allServices = await prisma.service.findMany({ orderBy: { name: 'asc' } });
+      const services = filterActiveServices(allServices);
       return sendSuccess(res, { services }, 'Servicios obtenidos');
     } catch (error) {
       handlePrismaError(error, 'service:list:protected');
@@ -845,10 +878,7 @@ protectedRouter.delete(
           },
         });
 
-        return tx.service.update({
-          where: { id: req.params.id },
-          data: { active: false, deletedAt: new Date() },
-        });
+        return softDeleteService(tx, req.params.id);
       });
 
       broadcastEvent('service:deleted', { id: req.params.id }, 'all');

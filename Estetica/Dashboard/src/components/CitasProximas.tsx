@@ -42,7 +42,7 @@ const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   transfer: 'Transferencia',
 };
 
-type BookingWithRelations = Booking & { service: Service };
+type BookingWithRelations = Booking & { service: Service | null };
 
 type PriceDialogState = {
   booking: BookingWithRelations;
@@ -84,7 +84,7 @@ export default function CitasProximas() {
   const getAmountForBooking = (booking: BookingWithRelations) =>
     typeof booking.amountOverride === 'number' && booking.amountOverride > 0
       ? booking.amountOverride
-      : booking.service.price;
+      : booking.service?.price ?? booking.servicePriceSnapshot;
 
   const updateBookingInState = (updated: BookingWithRelations) => {
     setData((prev = []) => prev.map((item) => (item.id === updated.id ? updated : item)));
@@ -287,9 +287,12 @@ export default function CitasProximas() {
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-1">
               <span className="text-xs text-gray-500 uppercase">Servicio</span>
-              <p className="text-sm font-medium text-gray-900">{booking.service.name}</p>
+              <p className="text-sm font-medium text-gray-900">
+                {booking.service?.name ?? booking.serviceNameSnapshot}
+              </p>
               <p className="text-xs text-gray-500 flex items-center gap-1">
-                <Clock className="h-3 w-3" /> {booking.service.duration} minutos
+                <Clock className="h-3 w-3" />
+                {booking.service?.duration ? `${booking.service.duration} minutos` : 'Duración no disponible'}
               </p>
             </div>
             <div className="space-y-1">
@@ -454,7 +457,8 @@ export default function CitasProximas() {
                   disabled={isSavingPrice}
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Precio del servicio: {formatCurrency(priceDialog.booking.service.price)}
+                  Precio del servicio:{' '}
+                  {formatCurrency(priceDialog.booking.service?.price ?? priceDialog.booking.servicePriceSnapshot)}
                 </p>
               </div>
               <DialogFooter className="flex flex-col sm:flex-row sm:justify-between gap-2">

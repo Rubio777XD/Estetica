@@ -51,6 +51,8 @@ model Service {
   description String?
   imageUrl    String?
   highlights  String[] @default([])
+  active      Boolean  @default(true)
+  deletedAt   DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -64,6 +66,8 @@ model Booking {
   clientName      String
   clientEmail     String?
   serviceId       String
+  serviceNameSnapshot  String
+  servicePriceSnapshot Float
   startTime       DateTime
   endTime         DateTime
   status          BookingStatus @default(scheduled)

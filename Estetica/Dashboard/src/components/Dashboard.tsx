@@ -12,7 +12,7 @@ import { formatDateTime } from '../lib/format';
 import { invalidateQuery, useApiQuery } from '../lib/data-store';
 import type { Booking, Service, StatsOverviewResponse } from '../types/api';
 
-type BookingWithService = Booking & { service: Service };
+type BookingWithService = Booking & { service: Service | null };
 
 const STATUS_LABELS = {
   scheduled: 'Programadas',
@@ -98,7 +98,7 @@ export default function Dashboard() {
           <CardContent className={cn(styles.cardContent, 'px-4 pb-4')}>
             <div className={styles.cardBody}>
               {overviewStatus === 'loading' ? (
-                <div className={styles.statGrid}>
+                <div className={styles.todayGrid}>
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div key={index} className={cn(styles.statCard, styles.skeleton)} />
                   ))}
@@ -113,7 +113,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : (
-                <div className={styles.statGrid}>
+                <div className={styles.todayGrid}>
                   {STATUS_ORDER.map((status) => (
                     <div key={status} className={styles.statCard}>
                       <span className={styles.statLabel}>{STATUS_LABELS[status]}</span>
@@ -167,7 +167,9 @@ export default function Dashboard() {
                           {booking.status === 'confirmed' ? 'Confirmada' : 'Programada'}
                         </Badge>
                       </div>
-                      <p className={styles.itemMeta}>{booking.service.name}</p>
+                      <p className={styles.itemMeta}>
+                        {booking.service?.name ?? booking.serviceNameSnapshot}
+                      </p>
                       <p className={styles.itemMeta}>{formatDateTime(booking.startTime)}</p>
                       {(() => {
                         const collaboratorName = booking.performedByName?.trim();
@@ -231,7 +233,9 @@ export default function Dashboard() {
                   {displayedPending.map((booking) => (
                     <div key={booking.id} className={styles.itemCard}>
                       <p className={styles.itemTitle}>{booking.clientName}</p>
-                      <p className={styles.itemMeta}>{booking.service.name}</p>
+                      <p className={styles.itemMeta}>
+                        {booking.service?.name ?? booking.serviceNameSnapshot}
+                      </p>
                       <p className={styles.itemMeta}>{formatDateTime(booking.startTime)}</p>
                       {booking.notes ? (
                         <p className={cn(styles.itemNote, styles.clampTwo)}>Notas: {booking.notes}</p>

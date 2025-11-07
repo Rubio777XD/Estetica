@@ -546,6 +546,7 @@ publicRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     const services = await prisma.service.findMany({
+      where: { active: true, deletedAt: null },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -700,10 +701,15 @@ const buildServiceData = (input: z.infer<typeof serviceSchema>) => {
   return data;
 };
 
+const serviceActiveSchema = z.object({
+  active: z.boolean(),
+});
+
 protectedRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     const services = await prisma.service.findMany({
+      where: { deletedAt: null },
       orderBy: { name: 'asc' },
     });
     return sendSuccess(res, { services }, 'Servicios obtenidos');
@@ -759,25 +765,58 @@ protectedRouter.put(
   })
 );
 
+protectedRouter.patch(
+  '/services/:id/active',
+  asyncHandler(async (req, res) => {
+    const parsed = serviceActiveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, 'Datos inválidos', parsed.error.flatten());
+    }
+
+    const existing = await prisma.service.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.deletedAt) {
+      throw new HttpError(404, 'Servicio no encontrado');
+    }
+
+    const service = await prisma.service.update({
+      where: { id: req.params.id },
+      data: { active: parsed.data.active },
+    });
+
+    broadcastEvent('service:updated', { id: service.id }, 'all');
+    broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
+
+    const message = parsed.data.active ? 'Servicio activado' : 'Servicio desactivado';
+    return sendSuccess(res, { service }, message);
+  })
+);
+
 protectedRouter.delete(
   '/services/:id',
   asyncHandler(async (req, res) => {
-    try {
-      await prisma.service.delete({ where: { id: req.params.id } });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') {
-          throw new HttpError(404, 'Servicio no encontrado');
-        }
-        if (error.code === 'P2003') {
-          throw new HttpError(409, 'No se puede eliminar un servicio con citas asociadas');
-        }
+    const service = await prisma.$transaction(async (tx) => {
+      const existing = await tx.service.findUnique({ where: { id: req.params.id } });
+      if (!existing || existing.deletedAt) {
+        throw new HttpError(404, 'Servicio no encontrado');
       }
-      throw error;
-    }
+
+      await tx.booking.updateMany({
+        where: { serviceId: existing.id },
+        data: {
+          serviceNameSnapshot: existing.name,
+          servicePriceSnapshot: existing.price,
+        },
+      });
+
+      return tx.service.update({
+        where: { id: req.params.id },
+        data: { active: false, deletedAt: new Date() },
+      });
+    });
+
     broadcastEvent('service:deleted', { id: req.params.id }, 'all');
     broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
-    return sendSuccess(res, { deleted: true }, 'Servicio eliminado');
+    return sendSuccess(res, { deleted: true, service }, 'Servicio eliminado');
   })
 );
 
@@ -975,6 +1014,8 @@ protectedRouter.post(
         serviceId,
         startTime: start,
         endTime: end,
+        serviceNameSnapshot: service.name,
+        servicePriceSnapshot: service.price,
       };
       if (normalized !== undefined) {
         data.notes = normalized;
@@ -1023,6 +1064,8 @@ publicRouter.post(
         serviceId,
         startTime: start,
         endTime: end,
+        serviceNameSnapshot: service.name,
+        servicePriceSnapshot: service.price,
       };
       if (normalized !== undefined) {
         data.notes = normalized;
@@ -1076,6 +1119,8 @@ protectedRouter.put(
         startTime: start,
         endTime: addMinutes(start, service.duration),
         status,
+        serviceNameSnapshot: service.name,
+        servicePriceSnapshot: service.price,
       };
       if (normalized !== undefined) {
         updateData.notes = normalized;

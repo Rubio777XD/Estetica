@@ -25,6 +25,8 @@ CREATE TABLE "Service" (
     "description" TEXT,
     "imageUrl" TEXT,
     "highlights" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "active" BOOLEAN NOT NULL DEFAULT TRUE,
+    "deletedAt" TIMESTAMPTZ,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -35,6 +37,8 @@ CREATE TABLE "Booking" (
     "id" TEXT PRIMARY KEY,
     "clientName" TEXT NOT NULL,
     "serviceId" TEXT NOT NULL,
+    "serviceNameSnapshot" TEXT NOT NULL,
+    "servicePriceSnapshot" DOUBLE PRECISION NOT NULL,
     "startTime" TIMESTAMPTZ NOT NULL,
     "endTime" TIMESTAMPTZ NOT NULL,
     "status" "BookingStatus" NOT NULL DEFAULT 'scheduled',

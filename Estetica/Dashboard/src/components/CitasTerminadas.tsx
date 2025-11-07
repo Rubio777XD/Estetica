@@ -16,7 +16,7 @@ import { useApiQuery } from '../lib/data-store';
 import { DateTimeField } from './DateTimeField';
 import type { Booking, Service } from '../types/api';
 
-type BookingWithRelations = Booking & { service: Service };
+type BookingWithRelations = Booking & { service: Service | null };
 
 const buildDefaultRange = () => {
   const now = new Date();
@@ -122,11 +122,15 @@ export default function CitasTerminadas() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>
                     <p className="text-xs uppercase text-gray-500">Servicio</p>
-                    <p className="text-sm font-medium text-gray-900">{booking.service.name}</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {booking.service?.name ?? booking.serviceNameSnapshot}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-gray-500">Duración</p>
-                    <p className="text-sm text-gray-700">{booking.service.duration} minutos</p>
+                    <p className="text-sm text-gray-700">
+                      {booking.service?.duration ? `${booking.service.duration} minutos` : 'No disponible'}
+                    </p>
                   </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">

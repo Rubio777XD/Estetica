@@ -10,6 +10,8 @@ export interface Service {
   description?: string | null;
   imageUrl?: string | null;
   highlights?: string[];
+  active: boolean;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -19,6 +21,8 @@ export interface Booking {
   clientName: string;
   clientEmail?: string | null;
   serviceId: string;
+  serviceNameSnapshot: string;
+  servicePriceSnapshot: number;
   startTime: string;
   endTime: string;
   status: BookingStatus;

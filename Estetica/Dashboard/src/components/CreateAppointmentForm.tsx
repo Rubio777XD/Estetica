@@ -67,11 +67,23 @@ export default function CreateAppointmentForm({
     }
   );
 
+  const availableServices = useMemo(
+    () => services.filter((service) => service.active && !service.deletedAt),
+    [services]
+  );
+
   useEffect(() => {
-    if (!serviceId && services.length > 0) {
-      setServiceId(services[0].id);
+    if (availableServices.length === 0) {
+      if (serviceId) {
+        setServiceId('');
+      }
+      return;
     }
-  }, [serviceId, services]);
+
+    if (!serviceId || !availableServices.some((service) => service.id === serviceId)) {
+      setServiceId(availableServices[0].id);
+    }
+  }, [availableServices, serviceId]);
 
   const slots = useMemo<SalonSlot[]>(() => {
     if (!date) {
@@ -89,15 +101,21 @@ export default function CreateAppointmentForm({
   }, [slots]);
 
   const selectedService = useMemo(
-    () => services.find((service) => service.id === serviceId) ?? null,
-    [serviceId, services]
+    () => availableServices.find((service) => service.id === serviceId) ?? null,
+    [serviceId, availableServices]
   );
 
   const trimmedName = clientName.trim();
   const trimmedEmail = clientEmail.trim();
   const emailIsValid = !trimmedEmail || EMAIL_REGEX.test(trimmedEmail);
   const isFormValid =
-    Boolean(trimmedName) && Boolean(serviceId) && Boolean(date) && Boolean(startTime) && emailIsValid && slots.length > 0 && services.length > 0;
+    Boolean(trimmedName) &&
+    Boolean(serviceId) &&
+    Boolean(date) &&
+    Boolean(startTime) &&
+    emailIsValid &&
+    slots.length > 0 &&
+    availableServices.length > 0;
 
   useEffect(() => {
     onStateChange?.({ isSubmitting, isValid: isFormValid });
@@ -240,16 +258,24 @@ export default function CreateAppointmentForm({
         <div className="space-y-6">
           <div className="space-y-2">
             <Label>Servicio*</Label>
-            <Select value={serviceId} onValueChange={setServiceId} disabled={servicesStatus === 'loading'}>
+            <Select
+              value={serviceId}
+              onValueChange={setServiceId}
+              disabled={servicesStatus === 'loading' || availableServices.length === 0}
+            >
               <SelectTrigger id="service">
                 <SelectValue placeholder="Selecciona un servicio" />
               </SelectTrigger>
               <SelectContent>
-                {services.map((service) => (
-                  <SelectItem key={service.id} value={service.id}>
-                    {service.name}
-                  </SelectItem>
-                ))}
+                {availableServices.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-500">No hay servicios activos disponibles.</div>
+                ) : (
+                  availableServices.map((service) => (
+                    <SelectItem key={service.id} value={service.id}>
+                      {service.name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             {servicesStatus === 'error' ? (

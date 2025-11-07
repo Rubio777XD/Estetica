@@ -146,6 +146,11 @@ export default function CitasPendientes() {
     }
   );
 
+  const activeServices = useMemo(
+    () => services.filter((service) => service.active && !service.deletedAt),
+    [services]
+  );
+
   const sortedBookings = useMemo(
     () =>
       [...bookings].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
@@ -415,7 +420,9 @@ export default function CitasPendientes() {
                 return (
                   <TableRow key={booking.id}>
                     <TableCell className="font-medium text-gray-900">{booking.clientName}</TableCell>
-                    <TableCell className="text-gray-700">{booking.service.name}</TableCell>
+                    <TableCell className="text-gray-700">
+                      {booking.service?.name ?? booking.serviceNameSnapshot}
+                    </TableCell>
                     <TableCell className="text-gray-600">{formatDateTime(booking.startTime)}</TableCell>
                     <TableCell className="text-gray-500">
                       <div className="space-y-1">
@@ -827,11 +834,32 @@ export default function CitasPendientes() {
                       <SelectValue placeholder="Selecciona un servicio" />
                     </SelectTrigger>
                     <SelectContent>
-                      {services.map((service) => (
-                        <SelectItem key={service.id} value={service.id}>
-                          {service.name}
-                        </SelectItem>
-                      ))}
+                      {(() => {
+                        const inactiveSelected =
+                          editDialog &&
+                          !activeServices.some((service) => service.id === editDialog.serviceId)
+                            ? services.find((service) => service.id === editDialog.serviceId)
+                            : null;
+
+                        return (
+                          <>
+                            {inactiveSelected ? (
+                              <SelectItem key={inactiveSelected.id} value={inactiveSelected.id} disabled>
+                                {inactiveSelected.name} (inactivo)
+                              </SelectItem>
+                            ) : null}
+                            {activeServices.length === 0 ? (
+                              <div className="px-3 py-2 text-sm text-gray-500">No hay servicios activos disponibles.</div>
+                            ) : (
+                              activeServices.map((service) => (
+                                <SelectItem key={service.id} value={service.id}>
+                                  {service.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </>
+                        );
+                      })()}
                     </SelectContent>
                   </Select>
                 </div>

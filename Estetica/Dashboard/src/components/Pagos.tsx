@@ -7,11 +7,14 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { cn } from './ui/utils';
 
 import { apiFetch } from '../lib/api';
 import { formatCurrency, formatDateTime, toDateKey } from '../lib/format';
 import { useApiQuery } from '../lib/data-store';
 import type { CommissionsResponse, PaymentMethod } from '../types/api';
+
+import styles from './Pagos.module.css';
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'Efectivo',
@@ -370,22 +373,22 @@ export default function Pagos() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
-          <CardHeader>
-            <CardTitle>Total del periodo</CardTitle>
+        <Card className={cn(styles.kpiCard)}>
+          <CardHeader className="px-6 pt-6 pb-2">
+            <CardTitle className="text-base font-semibold text-gray-900">Total del periodo</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-6 pb-6 space-y-2">
             <p className="text-3xl font-semibold text-gray-900">{formatCurrency(totalAmount)}</p>
-            <p className="text-sm text-gray-500 mt-2">Pagos registrados entre las fechas seleccionadas.</p>
+            <p className="text-sm text-gray-500">Pagos registrados entre las fechas seleccionadas.</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl border border-gray-100 shadow-lg">
-          <CardHeader>
-            <CardTitle>Total comisiones</CardTitle>
+        <Card className={cn(styles.kpiCard)}>
+          <CardHeader className="px-6 pt-6 pb-2">
+            <CardTitle className="text-base font-semibold text-gray-900">Total comisiones</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-6 pb-6 space-y-2">
             <p className="text-3xl font-semibold text-gray-900">{formatCurrency(totalCommission)}</p>
-            <p className="text-sm text-gray-500 mt-2">Monto acumulado de comisiones del periodo.</p>
+            <p className="text-sm text-gray-500">Monto acumulado de comisiones del periodo.</p>
           </CardContent>
         </Card>
       </div>

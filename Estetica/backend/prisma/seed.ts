@@ -72,10 +72,11 @@ export async function runSeed(prisma: SeedClient, options: RunSeedOptions = {}) 
   const services: Array<{ id: string; duration: number; name: string }> = [];
 
   for (const seed of serviceSeeds) {
+    const baseData = { ...seed, active: true, deletedAt: null } as const;
     const service = await prisma.service.upsert({
       where: { name: seed.name },
-      update: seed,
-      create: seed,
+      update: baseData,
+      create: baseData,
     });
     services.push({ id: service.id, duration: service.duration, name: service.name });
   }
@@ -208,6 +209,8 @@ export async function runSeed(prisma: SeedClient, options: RunSeedOptions = {}) 
       performedByName: seed.performedByName ?? null,
       completedBy: seed.completedBy ?? null,
       amountOverride: seed.amountOverride ?? null,
+      serviceNameSnapshot: service.name,
+      servicePriceSnapshot: service.price,
     };
 
     const booking = await prisma.booking.upsert({

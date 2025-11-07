@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Edit, Scissors, Clock, DollarSign, Trash2 } from 'lucide-react';
+import { Plus, Edit, Scissors, Clock, DollarSign, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -96,6 +96,8 @@ export default function Servicios() {
       price: payload.price,
       duration: payload.duration,
       description: payload.description ?? null,
+      active: true,
+      deletedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -181,6 +183,33 @@ export default function Servicios() {
     }
   };
 
+  const handleToggleActive = async (service: Service) => {
+    const nextActive = !service.active;
+    const previous = services;
+
+    setQueryData<Service[]>(SERVICES_KEY, (prev = []) =>
+      prev.map((item) => (item.id === service.id ? { ...item, active: nextActive } : item))
+    );
+
+    try {
+      const { service: updated } = await apiFetch<{ service: Service }>(`/api/services/${service.id}/active`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: nextActive }),
+      });
+
+      setQueryData<Service[]>(SERVICES_KEY, (prev = []) =>
+        prev.map((item) => (item.id === updated.id ? updated : item))
+      );
+
+      toast.success(nextActive ? 'Servicio activado' : 'Servicio desactivado');
+    } catch (err) {
+      setQueryData<Service[]>(SERVICES_KEY, () => previous);
+      toast.error(err instanceof ApiError ? err.message : 'No fue posible actualizar el estado del servicio');
+    } finally {
+      invalidateQuery(['services', 'stats-overview']);
+    }
+  };
+
   const handleDelete = async (service: Service) => {
     const previous = services;
     setQueryData<Service[]>(SERVICES_KEY, (prev = []) => prev.filter((item) => item.id !== service.id));
@@ -252,12 +281,29 @@ export default function Servicios() {
                     <div className="flex items-center space-x-2">
                       <Scissors className="h-4 w-4 text-gray-500" />
                       <span>{servicio.name}</span>
+                      {!servicio.active && (
+                        <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                          Inactivo
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
                       Creado el {new Date(servicio.createdAt).toLocaleDateString('es-MX')}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleToggleActive(servicio)}
+                      aria-label={servicio.active ? 'Desactivar servicio' : 'Activar servicio'}
+                    >
+                      {servicio.active ? (
+                        <ToggleLeft className="h-4 w-4" />
+                      ) : (
+                        <ToggleRight className="h-4 w-4" />
+                      )}
+                    </Button>
                     <Button variant="outline" size="icon" onClick={() => openEditDialog(servicio)} aria-label="Editar servicio">
                       <Edit className="h-4 w-4" />
                     </Button>

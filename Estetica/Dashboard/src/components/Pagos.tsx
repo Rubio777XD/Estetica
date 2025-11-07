@@ -24,7 +24,7 @@ const initialTo = toDateKey(today);
 
 const FILTER_STORAGE_KEY = 'dashboard:payments:filters';
 const COMMISSIONS_KEY = (from?: string, to?: string, collaborator?: string) =>
-  `commissions:${from ?? 'all'}:${to ?? 'all'}:${collaborator ?? 'all'}`;
+  `commissions:${from ?? 'all'}:${to ?? 'all'}:${collaborator ? collaborator.toLowerCase() : 'all'}`;
 type StoredFilters = {
   from?: string;
   to?: string;
@@ -68,7 +68,7 @@ export default function Pagos() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
-    if (collaboratorFilter) params.set('collaboratorEmail', collaboratorFilter);
+    if (collaboratorFilter) params.set('collaborator', collaboratorFilter);
     const query = params.toString();
     return apiFetch<CommissionsResponse>(`/api/commissions${query ? `?${query}` : ''}`);
   });
@@ -77,11 +77,16 @@ export default function Pagos() {
   const totalAmount = commissionsResponse?.totalAmount ?? 0;
   const totalCommission = commissionsResponse?.totalCommission ?? 0;
   const collaboratorOptions = useMemo(() => {
-    const rawList = commissionsResponse?.collaborators ?? [];
-    const fromRows = rows
-      .map((row) => row.assignedEmail || row.commissionAssigneeEmail || null)
-      .filter((value): value is string => Boolean(value));
-    return Array.from(new Set([...rawList, ...fromRows])).sort((a, b) => a.localeCompare(b));
+    const values = new Set<string>();
+    (commissionsResponse?.collaborators ?? [])
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .forEach((value) => values.add(value.trim()));
+    rows.forEach((row) => {
+      [row.assignedName, row.assignedEmail, row.commissionAssigneeName, row.commissionAssigneeEmail]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .forEach((value) => values.add(value.trim()));
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [commissionsResponse, rows]);
 
   useEffect(() => {
@@ -114,7 +119,11 @@ export default function Pagos() {
     const lines = [
       ['Fecha', 'Cliente', 'Servicio', 'Total de la cita', 'Comisión', 'Método', 'Colaboradora'],
       ...visibleRows.map((row) => {
-        const collaborator = row.assignedEmail ?? row.commissionAssigneeEmail ?? '';
+        const collaboratorName = row.assignedName ?? row.commissionAssigneeName ?? '';
+        const collaboratorEmail = row.assignedEmail ?? row.commissionAssigneeEmail ?? '';
+        const collaborator = collaboratorEmail && collaboratorName
+          ? `${collaboratorName} <${collaboratorEmail}>`
+          : collaboratorName || collaboratorEmail;
         const methodLabel = row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] ?? row.paymentMethod : '—';
         return [
           formatDateTime(row.startTime),
@@ -142,7 +151,7 @@ export default function Pagos() {
   };
 
   const handleApplyFilters = () => {
-    const normalized = collaboratorInput.trim().toLowerCase();
+    const normalized = collaboratorInput.trim();
     setCollaboratorInput(normalized);
     if (collaboratorFilter === normalized) {
       void refetch();
@@ -214,21 +223,38 @@ export default function Pagos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.bookingId}>
-                <TableCell className="text-gray-600">{formatDateTime(row.startTime)}</TableCell>
-                <TableCell className="font-medium text-gray-900">{row.clientName}</TableCell>
-                <TableCell className="text-gray-700">{row.serviceName}</TableCell>
-                <TableCell className="text-gray-900">{formatCurrency(row.amount)}</TableCell>
-                <TableCell className="text-gray-900">{formatCurrency(row.commissionAmount)}</TableCell>
-                <TableCell className="text-gray-600">
-                  {row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] : '—'}
-                </TableCell>
-                <TableCell className="text-gray-600">
-                  {row.assignedEmail ?? row.commissionAssigneeEmail ?? '—'}
-                </TableCell>
-              </TableRow>
-            ))}
+            {rows.map((row) => {
+              const collaboratorName = row.assignedName ?? row.commissionAssigneeName ?? null;
+              const collaboratorEmail = row.assignedEmail ?? row.commissionAssigneeEmail ?? null;
+              const hasCollaborator = Boolean(collaboratorName || collaboratorEmail);
+
+              return (
+                <TableRow key={row.bookingId}>
+                  <TableCell className="text-gray-600">{formatDateTime(row.startTime)}</TableCell>
+                  <TableCell className="font-medium text-gray-900">{row.clientName}</TableCell>
+                  <TableCell className="text-gray-700">{row.serviceName}</TableCell>
+                  <TableCell className="text-gray-900">{formatCurrency(row.amount)}</TableCell>
+                  <TableCell className="text-gray-900">{formatCurrency(row.commissionAmount)}</TableCell>
+                  <TableCell className="text-gray-600">
+                    {row.paymentMethod ? PAYMENT_METHOD_LABELS[row.paymentMethod] : '—'}
+                  </TableCell>
+                  <TableCell className="text-gray-600">
+                    {hasCollaborator ? (
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">
+                          {collaboratorName ?? collaboratorEmail}
+                        </span>
+                        {collaboratorEmail && collaboratorName ? (
+                          <span className="text-xs text-gray-500">{collaboratorEmail}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -268,19 +294,19 @@ export default function Pagos() {
           </div>
           <div className="flex flex-col space-y-1 min-w-[220px]">
             <Label htmlFor="collaborator-filter" className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-              Filtrar por correo de colaboradora
+              Filtrar por colaboradora (nombre o correo)
             </Label>
             <Input
               id="collaborator-filter"
-              type="email"
+              type="text"
               value={collaboratorInput}
               onChange={(event) => setCollaboratorInput(event.target.value)}
-              placeholder="colaboradora@correo.com"
+              placeholder="Ej. Alex o alex@correo.com"
               list="payments-collaborators"
             />
             <datalist id="payments-collaborators">
-              {collaboratorOptions.map((email) => (
-                <option key={email} value={email} />
+              {collaboratorOptions.map((option) => (
+                <option key={option} value={option} />
               ))}
             </datalist>
           </div>

@@ -202,8 +202,8 @@ export default function Usuarios({ isAdmin }: UsuariosProps) {
           ) : sortedUsers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Aún no hay usuarios registrados.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-muted-foreground">
                     <th className="py-2 pr-4 font-medium">Correo</th>

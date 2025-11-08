@@ -571,7 +571,10 @@ publicRouter.get(
   asyncHandler(async (_req, res) => {
     try {
       const services = await prisma.service.findMany({
-        where: { ...defaultServiceFilters },
+        where: {
+          active: true,
+          deletedAt: null,
+        },
         orderBy: { name: 'asc' },
       });
       const formatted = services.map(({
@@ -2178,7 +2181,12 @@ protectedRouter.get(
       .map((item) => item.serviceId)
       .filter((id): id is string => id !== null && id !== undefined);
     const serviceMap = serviceIds.length
-      ? await prisma.service.findMany({ where: { id: { in: serviceIds } } })
+      ? await prisma.service.findMany({
+          where: {
+            ...defaultServiceFilters,
+            id: { in: serviceIds },
+          },
+        })
       : [];
     const serviceNameById = new Map(serviceMap.map((service) => [service.id, service.name] as const));
 

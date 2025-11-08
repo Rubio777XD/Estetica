@@ -1,5 +1,11 @@
 # Registro de cambios
 
+# 2025-11-10
+- Alineado el catálogo público y los reportes de servicios para respetar los filtros `active:true` y `deletedAt:null`, evitando
+  referencias a servicios eliminados en la API protegida de métricas.
+- Documentado en el README el procedimiento para regenerar Prisma Client cuando aparece el error `Unknown argument active/deletedAt`.
+- Anotada en el esquema Prisma la intención de los campos `active` y `deletedAt` para mantener el soft delete estandarizado.
+
 # 2025-11-08
 - Normalizado el modelo de servicios en Prisma con `deletedAt`, índices (`active`, `deletedAt`) y snapshots de duración para las citas; agregada migración con backfill.
 - Implementado soft delete consistente (filtro por defecto `active:true`, `deletedAt:null`), endpoint `PATCH /services/:id/active` y hard delete opcional (`force=true`) que nulifica `serviceId` tras copiar snapshots.

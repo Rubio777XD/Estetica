@@ -52,7 +52,9 @@ model Service {
   imageUrl    String?
   highlights  String[] @default([])
 
+  /// Keeps the service visible unless manually disabled.
   active    Boolean  @default(true)
+  /// Soft delete marker. `null` means the service is still listed.
   deletedAt DateTime?
 
   createdAt DateTime @default(now())

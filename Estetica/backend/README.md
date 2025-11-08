@@ -16,6 +16,8 @@ npm install
 
 Copia el archivo `.env` de ejemplo (o solicita las credenciales) y asegúrate de completar las variables `DATABASE_URL`, `DIRECT_URL` y `SHADOW_DATABASE_URL`.
 
+Al finalizar la instalación se ejecuta automáticamente `prisma generate` para sincronizar el cliente con el schema actualizado. Si clonas el repo sin reinstalar dependencias, puedes regenerarlo manualmente con `npm run prisma:generate`.
+
 ### Capacidad de citas por horario
 
 El comportamiento predeterminado permite agendar reservas simultáneas ilimitadas en un mismo horario. Si en el futuro deseas limitar la capacidad por slot, define `MAX_PARALLEL_BOOKINGS_PER_SLOT` en el `.env` con el número máximo de citas activas (`scheduled`/`confirmed`) permitidas por horario. Cualquier valor vacío, no numérico o menor/igual a cero se interpreta como capacidad infinita.
@@ -24,9 +26,10 @@ El comportamiento predeterminado permite agendar reservas simultáneas ilimitada
 
 | Script | Descripción |
 | ------ | ----------- |
-| `npm run dev` | Levanta el servidor en modo desarrollo con recarga en caliente. |
+| `npm run dev` | Levanta el servidor en modo desarrollo con recarga en caliente y regenera el Prisma Client antes de arrancar. |
 | `npm run build` | Compila el proyecto a JavaScript en `dist/`. |
 | `npm run start` | Ejecuta la versión compilada. |
+| `npm run prisma:generate` | Regenera manualmente el Prisma Client cuando se toque el schema. |
 | `npm run db:verify` | Runner de verificación integral. Ejecuta `prisma validate`, `prisma format --check`, `prisma migrate status`, `prisma migrate diff` (base de datos ↔ schema), revisa migraciones en busca de duplicados/BOM, valida índices y llaves foráneas, y realiza pruebas funcionales sobre la base. |
 | `npm run db:audit` | Variante profunda del runner anterior (`--deep`). Añade diffs schema ↔ migraciones y comprobaciones adicionales de índices. Ideal para CI/CD. |
 | `npm run db:reset-safe` | Resetea la base (usa `prisma migrate reset --force --skip-seed`) y vuelve a sembrar los datos de manera transaccional. Por seguridad sólo permite hosts locales, a menos que se use `--allow-remote` o `ALLOW_REMOTE_DB_RESET=1`. |

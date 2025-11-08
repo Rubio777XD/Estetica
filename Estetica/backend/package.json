@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "prisma generate",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
@@ -20,7 +21,8 @@
     "db:smoke": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/e2e-smoke.ts",
     "audit:db": "npm run db:audit",
     "smoke:e2e": "npm run db:smoke",
-    "prebuild": "prisma generate"
+    "prebuild": "prisma generate",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

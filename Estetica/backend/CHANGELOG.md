@@ -2,6 +2,7 @@
 
 ## 2024-11-09
 
+- Asegurada la regeneración automática de Prisma Client en `npm install` y `npm run dev` para evitar clientes desfasados que provoquen errores `Unknown argument 'active'`/`'deletedAt'`.
 - Normalizado el flujo de `Service` con filtros consistentes (`active` + `deletedAt`) y manejo tipado de errores de Prisma en todas las rutas.
 - Documentado el borrado lógico y los snapshots de servicios en el README para garantizar históricos estables.
 - Ajustadas las validaciones de precio y duración para aceptar valores mayores o iguales a cero conforme al modelo Prisma.

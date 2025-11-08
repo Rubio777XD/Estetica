@@ -258,6 +258,10 @@ npx prisma generate
   ```
 
 - **Shadow DB inaccesible** → configura `SHADOW_DATABASE_URL` con permisos completos. Usa `npm run db:verify -- --skip-shadow`
+- **`Unknown argument active/deletedAt` al usar Prisma Client** → ejecuta las migraciones pendientes con
+  `npx prisma migrate dev`, luego regenera el cliente con `npx prisma generate` y reinicia el servidor para que cargue el
+  cliente actualizado. Si la base remota no está accesible, valida que `DATABASE_URL` apunte al entorno correcto y vuelve a
+  correr los comandos.
   solo si no hay alternativa y documenta la decisión. El flag exporta `PRISMA_MIGRATION_SKIP_SHADOW_DATABASE=1` únicamente para
   esa ejecución.
 

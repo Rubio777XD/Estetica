@@ -442,6 +442,8 @@ checks.push({
       { table: 'Booking', column: 'confirmedEmail', dataType: 'text', nullable: true },
       { table: 'Booking', column: 'performedByName', dataType: 'text', nullable: true },
       { table: 'Booking', column: 'completedBy', dataType: 'text', nullable: true },
+      { table: 'Booking', column: 'serviceNameSnapshot', dataType: 'text', nullable: false },
+      { table: 'Booking', column: 'servicePriceSnapshot', dataType: 'double precision', nullable: false },
       { table: 'Booking', column: 'assignedEmail', dataType: 'text', nullable: true },
       { table: 'Booking', column: 'assignedAt', dataType: 'timestamp without time zone', nullable: true },
       { table: 'Booking', column: 'amountOverride', dataType: 'double precision', nullable: true },
@@ -451,6 +453,19 @@ checks.push({
       { table: 'Assignment', column: 'token', dataType: 'text', nullable: false },
       { table: 'Payment', column: 'bookingId', dataType: 'text', nullable: false },
       { table: 'Commission', column: 'bookingId', dataType: 'text', nullable: false },
+      {
+        table: 'Service',
+        column: 'active',
+        dataType: 'boolean',
+        nullable: false,
+        defaultIncludes: /true/i,
+      },
+      {
+        table: 'Service',
+        column: 'deletedAt',
+        dataType: ['timestamp with time zone', 'timestamp without time zone'],
+        nullable: true,
+      },
     ];
 
     const tables = Array.from(new Set(columnExpectations.map((item) => item.table)));

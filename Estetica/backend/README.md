@@ -81,6 +81,7 @@ Los comandos `npm run db:seed:dry`, `npm run db:seed:apply` y `npm run db:reset-
 ## Troubleshooting
 
 - Si `db:verify` falla por diferencias entre la base y el schema, revisa el mensaje emitido por `prisma migrate diff` y genera la migración correspondiente.
+- Si Prisma arroja errores del tipo `Unknown argument "deletedAt"` o `Unknown argument "serviceNameSnapshot"`, significa que la base no tiene aplicadas las migraciones `20241108000000_service_state_snapshots` y/o `20241115000000_ensure_service_columns`. Ejecuta `npx prisma migrate deploy` (o `npm run prisma:migrate`) antes de volver a levantar el backend y confirma con `npm run db:verify` que las columnas se encuentren presentes.
 - Para revisar logs detallados de las migraciones, ejecuta manualmente `npx prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel prisma/schema.prisma`.
 - Si trabajas con redes limitadas y no puedes usar shadow databases, añade `--skip-shadow` a `db:verify` o `db:audit`.
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2024-11-16
+
+- Añadido guardado de arranque que valida la presencia de las columnas `Service.active`, `Service.deletedAt`, `Booking.serviceNameSnapshot` y `Booking.servicePriceSnapshot`, con instrucciones explícitas para aplicar migraciones pendientes.
+- Incorporada la migración `20241115000000_ensure_service_columns` que crea/normaliza los campos anteriores en bases heredadas y rellena snapshots faltantes.
+
+## 2024-11-10
+
+- Endurecido el CRUD de servicios y reservas para depender explícitamente de `deletedAt` y los snapshots de nombre/precio, eliminando los fallbacks silenciosos ante esquemas desactualizados.
+- Ampliado el verificador `npm run db:verify` para validar las columnas `Service.active`, `Service.deletedAt`, `Booking.serviceNameSnapshot` y `Booking.servicePriceSnapshot`.
+- Documentado el procedimiento para aplicar la migración `20241108000000_service_state_snapshots` cuando Prisma reporte argumentos desconocidos.
+
 ## 2024-11-09
 
 - Normalizado el flujo de `Service` con filtros consistentes (`active` + `deletedAt`) y manejo tipado de errores de Prisma en todas las rutas.

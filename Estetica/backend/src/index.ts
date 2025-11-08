@@ -350,6 +350,47 @@ const DEFAULT_ADMIN_EMAIL = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@local.de
 const DEFAULT_ADMIN_NAME = process.env.BOOTSTRAP_ADMIN_NAME || 'Administrador Autogenerado';
 const DEFAULT_ADMIN_PASSWORD = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 
+const REQUIRED_SERVICE_COLUMNS = [
+  { table: 'Service', column: 'active', description: 'Service.active (boolean)' },
+  { table: 'Service', column: 'deletedAt', description: 'Service.deletedAt (timestamp nullable)' },
+  { table: 'Booking', column: 'serviceNameSnapshot', description: 'Booking.serviceNameSnapshot (text not null)' },
+  { table: 'Booking', column: 'servicePriceSnapshot', description: 'Booking.servicePriceSnapshot (double precision not null)' },
+] as const;
+
+const ensureServiceSchema = async () => {
+  const serviceColumns = ['active', 'deletedAt'] as const;
+  const bookingColumns = ['serviceNameSnapshot', 'servicePriceSnapshot'] as const;
+
+  const rows = await prisma.$queryRaw<Array<{ table_name: string; column_name: string }>>`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND (
+        (table_name = 'Service' AND column_name IN (${Prisma.join(serviceColumns)}))
+        OR (table_name = 'Booking' AND column_name IN (${Prisma.join(bookingColumns)}))
+      )
+  `;
+
+  const present = new Set(rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const missing = REQUIRED_SERVICE_COLUMNS.filter(
+    (requirement) => !present.has(`${requirement.table}.${requirement.column}`)
+  );
+
+  if (missing.length > 0) {
+    const missingList = missing.map((item) => `- ${item.description}`).join('\n');
+    const guidance = [
+      'Faltan columnas esenciales para operar el catálogo de servicios:',
+      missingList,
+      '',
+      'Solución sugerida:',
+      '1. Ejecuta `npm run prisma:migrate` dentro de `Estetica/backend` para aplicar las migraciones pendientes.',
+      '2. Verifica especialmente la migración `20241115000000_ensure_service_columns`.',
+      '3. Si sigues viendo el error, revisa `npm run db:verify` para obtener un reporte detallado.',
+    ].join('\n');
+    throw new Error(guidance);
+  }
+};
+
 type BootstrapReport = {
   adminCreated?: { email: string; temporaryPassword?: string };
   adminEnsured?: { email: string };
@@ -733,12 +774,35 @@ const serviceActiveSchema = z.object({
   active: z.boolean(),
 });
 
+type SoftDeleteAwareService = {
+  active: boolean;
+  deletedAt: Date | null;
+};
+
+const isServiceSoftDeleted = (service: SoftDeleteAwareService): boolean => Boolean(service.deletedAt);
+
+const softDeleteService = async (tx: Prisma.TransactionClient, id: string) =>
+  tx.service.update({
+    where: { id },
+    data: { active: false, deletedAt: new Date() },
+  });
+
+const updateBookingSnapshots = async (tx: Prisma.TransactionClient, service: { id: string; name: string; price: number }) => {
+  await tx.booking.updateMany({
+    where: { serviceId: service.id },
+    data: {
+      serviceNameSnapshot: service.name,
+      servicePriceSnapshot: service.price,
+    },
+  });
+};
+
 protectedRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     try {
       const services = await prisma.service.findMany({
-        where: { deletedAt: null, active: true },
+        where: { deletedAt: null },
         orderBy: { name: 'asc' },
       });
       return sendSuccess(res, { services }, 'Servicios obtenidos');
@@ -779,7 +843,7 @@ protectedRouter.put(
     }
 
     const existing = await prisma.service.findUnique({ where: { id: req.params.id } });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new HttpError(404, 'Servicio no encontrado');
     }
 
@@ -806,7 +870,7 @@ protectedRouter.patch(
     }
 
     const existing = await prisma.service.findUnique({ where: { id: req.params.id } });
-    if (!existing || existing.deletedAt) {
+    if (!existing || isServiceSoftDeleted(existing)) {
       throw new HttpError(404, 'Servicio no encontrado');
     }
 
@@ -833,22 +897,13 @@ protectedRouter.delete(
     try {
       const service = await prisma.$transaction(async (tx) => {
         const existing = await tx.service.findUnique({ where: { id: req.params.id } });
-        if (!existing || existing.deletedAt) {
+        if (!existing || isServiceSoftDeleted(existing)) {
           throw new HttpError(404, 'Servicio no encontrado');
         }
 
-        await tx.booking.updateMany({
-          where: { serviceId: existing.id },
-          data: {
-            serviceNameSnapshot: existing.name,
-            servicePriceSnapshot: existing.price,
-          },
-        });
+        await updateBookingSnapshots(tx, existing);
 
-        return tx.service.update({
-          where: { id: req.params.id },
-          data: { active: false, deletedAt: new Date() },
-        });
+        return softDeleteService(tx, req.params.id);
       });
 
       broadcastEvent('service:deleted', { id: req.params.id }, 'all');
@@ -1039,8 +1094,12 @@ protectedRouter.post(
     const booking = await prisma.$transaction(async (tx) => {
       const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+
+      if (!service.active) {
+        throw new HttpError(409, 'Servicio inactivo');
       }
 
       const start = new Date(startTime);
@@ -1089,8 +1148,12 @@ publicRouter.post(
     const booking = await prisma.$transaction(async (tx) => {
       const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+
+      if (!service.active) {
+        throw new HttpError(409, 'Servicio inactivo');
       }
 
       const start = new Date(startTime);
@@ -1144,8 +1207,12 @@ protectedRouter.put(
 
       const { clientName, clientEmail, serviceId, startTime, notes, status } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+
+      if (!service.active) {
+        throw new HttpError(409, 'Servicio inactivo');
       }
 
       const start = new Date(startTime);
@@ -2176,6 +2243,7 @@ const port = Number(process.env.PORT) || 3000;
 
 const startServer = async () => {
   try {
+    await ensureServiceSchema();
     const report = await ensureCoreData();
     if (report.adminCreated) {
       console.info('[bootstrap] administrador creado', report.adminCreated);

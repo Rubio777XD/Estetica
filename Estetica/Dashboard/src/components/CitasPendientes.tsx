@@ -278,7 +278,7 @@ export default function CitasPendientes() {
     setEditDialog({
       booking,
       clientName: booking.clientName,
-      serviceId: booking.serviceId,
+      serviceId: booking.serviceId ?? '',
       startTime: toDateTimeInputValue(booking.startTime),
       notes: booking.notes ?? '',
     });
@@ -296,6 +296,11 @@ export default function CitasPendientes() {
       toast.error('Ingresa el nombre de la clienta');
       return;
     }
+    if (!serviceId) {
+      toast.error('Selecciona un servicio válido');
+      return;
+    }
+
     setEditLoading(true);
     try {
       const { booking: updated } = await apiFetch<{ booking: BookingWithRelations }>(`/api/bookings/${booking.id}`, {

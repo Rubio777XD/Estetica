@@ -19,7 +19,7 @@ CREATE INDEX "User_role_idx" ON "User" ("role");
 
 CREATE TABLE "Service" (
     "id" TEXT PRIMARY KEY,
-    "name" TEXT NOT NULL UNIQUE,
+    "name" TEXT NOT NULL,
     "price" DOUBLE PRECISION NOT NULL,
     "duration" INTEGER NOT NULL,
     "description" TEXT,
@@ -33,19 +33,23 @@ CREATE TABLE "Service" (
 
 CREATE INDEX "Service_name_idx" ON "Service" ("name");
 
+CREATE INDEX "Service_active_idx" ON "Service" ("active");
+CREATE INDEX "Service_deletedAt_idx" ON "Service" ("deletedAt");
+
 CREATE TABLE "Booking" (
     "id" TEXT PRIMARY KEY,
     "clientName" TEXT NOT NULL,
-    "serviceId" TEXT NOT NULL,
+    "serviceId" TEXT,
     "serviceNameSnapshot" TEXT NOT NULL,
     "servicePriceSnapshot" DOUBLE PRECISION NOT NULL,
+    "serviceDurationSnapshot" INTEGER NOT NULL,
     "startTime" TIMESTAMPTZ NOT NULL,
     "endTime" TIMESTAMPTZ NOT NULL,
     "status" "BookingStatus" NOT NULL DEFAULT 'scheduled',
     "notes" TEXT,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT "Booking_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "Booking_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE INDEX "Booking_startTime_idx" ON "Booking" ("startTime");

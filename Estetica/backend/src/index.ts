@@ -570,9 +570,11 @@ publicRouter.get(
   '/services',
   asyncHandler(async (_req, res) => {
     try {
-      const allServices = await prisma.service.findMany({ orderBy: { name: 'asc' } });
-      const filtered = filterActiveServices(allServices);
-      const services = filtered.map(({
+      const services = await prisma.service.findMany({
+        where: { ...defaultServiceFilters },
+        orderBy: { name: 'asc' },
+      });
+      const formatted = services.map(({
         id,
         name,
         price,
@@ -592,7 +594,7 @@ publicRouter.get(
         updatedAt,
       }));
 
-      return sendSuccess(res, { services }, 'Servicios públicos');
+      return sendSuccess(res, { services: formatted }, 'Servicios públicos');
     } catch (error) {
       handlePrismaError(error, 'service:list:public');
     }
@@ -740,40 +742,51 @@ const serviceActiveSchema = z.object({
   active: z.boolean(),
 });
 
-type SoftDeleteAwareService = {
-  active?: boolean | null;
-  deletedAt?: Date | null;
-};
+const serviceListQuerySchema = z.object({
+  includeInactive: z.coerce.boolean().optional(),
+  includeDeleted: z.coerce.boolean().optional(),
+});
 
-const filterActiveServices = <T extends SoftDeleteAwareService>(services: T[]): T[] =>
-  services.filter((service) => service.active !== false && (service.deletedAt === undefined || service.deletedAt === null));
+const serviceDeleteQuerySchema = z.object({
+  force: z.coerce.boolean().optional(),
+});
 
-const isDeletedAtValidationError = (error: unknown) =>
-  error instanceof Prisma.PrismaClientValidationError && error.message.includes('Unknown argument `deletedAt`');
+const defaultServiceFilters: Prisma.ServiceWhereInput = { active: true, deletedAt: null };
 
-const softDeleteService = async (tx: Prisma.TransactionClient, id: string) => {
-  try {
-    return await tx.service.update({
-      where: { id },
-      data: { active: false, deletedAt: new Date() },
-    });
-  } catch (error) {
-    if (isDeletedAtValidationError(error)) {
-      return tx.service.update({
-        where: { id },
-        data: { active: false },
-      });
-    }
-    throw error;
+const buildServiceFilters = (query?: z.infer<typeof serviceListQuerySchema>): Prisma.ServiceWhereInput => {
+  if (!query) {
+    return { ...defaultServiceFilters };
   }
+
+  const where: Prisma.ServiceWhereInput = {};
+  if (!query.includeInactive) {
+    where.active = true;
+  }
+  if (!query.includeDeleted) {
+    where.deletedAt = null;
+  }
+  return where;
 };
+
+const softDeleteService = async (tx: Prisma.TransactionClient, id: string) =>
+  tx.service.update({
+    where: { id },
+    data: { active: false, deletedAt: new Date() },
+  });
 
 protectedRouter.get(
   '/services',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     try {
-      const allServices = await prisma.service.findMany({ orderBy: { name: 'asc' } });
-      const services = filterActiveServices(allServices);
+      const parsedQuery = serviceListQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        throw new HttpError(400, 'Parámetros inválidos', parsedQuery.error.flatten());
+      }
+
+      const services = await prisma.service.findMany({
+        where: buildServiceFilters(parsedQuery.data),
+        orderBy: { name: 'asc' },
+      });
       return sendSuccess(res, { services }, 'Servicios obtenidos');
     } catch (error) {
       handlePrismaError(error, 'service:list:protected');
@@ -812,7 +825,7 @@ protectedRouter.put(
     }
 
     const existing = await prisma.service.findUnique({ where: { id: req.params.id } });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new HttpError(404, 'Servicio no encontrado');
     }
 
@@ -863,10 +876,35 @@ protectedRouter.patch(
 protectedRouter.delete(
   '/services/:id',
   asyncHandler(async (req, res) => {
+    const parsedQuery = serviceDeleteQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      throw new HttpError(400, 'Parámetros inválidos', parsedQuery.error.flatten());
+    }
+
+    const forceDelete = parsedQuery.data.force ?? false;
+
     try {
       const service = await prisma.$transaction(async (tx) => {
         const existing = await tx.service.findUnique({ where: { id: req.params.id } });
-        if (!existing || existing.deletedAt) {
+        if (!existing) {
+          throw new HttpError(404, 'Servicio no encontrado');
+        }
+
+        if (forceDelete) {
+          await tx.booking.updateMany({
+            where: { serviceId: existing.id },
+            data: {
+              serviceId: null,
+              serviceNameSnapshot: existing.name,
+              servicePriceSnapshot: existing.price,
+              serviceDurationSnapshot: existing.duration,
+            },
+          });
+
+          return tx.service.delete({ where: { id: existing.id } });
+        }
+
+        if (existing.deletedAt) {
           throw new HttpError(404, 'Servicio no encontrado');
         }
 
@@ -875,6 +913,7 @@ protectedRouter.delete(
           data: {
             serviceNameSnapshot: existing.name,
             servicePriceSnapshot: existing.price,
+            serviceDurationSnapshot: existing.duration,
           },
         });
 
@@ -883,7 +922,8 @@ protectedRouter.delete(
 
       broadcastEvent('service:deleted', { id: req.params.id }, 'all');
       broadcastEvent('stats:invalidate', { reason: 'service-change' }, 'auth');
-      return sendSuccess(res, { deleted: true, service }, 'Servicio eliminado');
+      const message = forceDelete ? 'Servicio eliminado permanentemente' : 'Servicio eliminado';
+      return sendSuccess(res, { deleted: true, service }, message);
     } catch (error) {
       if (error instanceof HttpError) {
         throw error;
@@ -1069,8 +1109,11 @@ protectedRouter.post(
     const booking = await prisma.$transaction(async (tx) => {
       const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+      if (!service.active) {
+        throw new HttpError(409, 'El servicio está desactivado');
       }
 
       const start = new Date(startTime);
@@ -1089,6 +1132,7 @@ protectedRouter.post(
         endTime: end,
         serviceNameSnapshot: service.name,
         servicePriceSnapshot: service.price,
+        serviceDurationSnapshot: service.duration,
       };
       if (normalized !== undefined) {
         data.notes = normalized;
@@ -1119,8 +1163,11 @@ publicRouter.post(
     const booking = await prisma.$transaction(async (tx) => {
       const { clientName, clientEmail, serviceId, startTime, notes } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+      if (!service.active) {
+        throw new HttpError(409, 'El servicio está desactivado');
       }
 
       const start = new Date(startTime);
@@ -1139,6 +1186,7 @@ publicRouter.post(
         endTime: end,
         serviceNameSnapshot: service.name,
         servicePriceSnapshot: service.price,
+        serviceDurationSnapshot: service.duration,
       };
       if (normalized !== undefined) {
         data.notes = normalized;
@@ -1174,8 +1222,11 @@ protectedRouter.put(
 
       const { clientName, clientEmail, serviceId, startTime, notes, status } = result.data;
       const service = await tx.service.findUnique({ where: { id: serviceId } });
-      if (!service) {
+      if (!service || service.deletedAt) {
         throw new HttpError(404, 'Servicio no encontrado');
+      }
+      if (!service.active) {
+        throw new HttpError(409, 'El servicio está desactivado');
       }
 
       const start = new Date(startTime);
@@ -1194,6 +1245,7 @@ protectedRouter.put(
         status,
         serviceNameSnapshot: service.name,
         servicePriceSnapshot: service.price,
+        serviceDurationSnapshot: service.duration,
       };
       if (normalized !== undefined) {
         updateData.notes = normalized;
@@ -2122,10 +2174,12 @@ protectedRouter.get(
       take: 5,
     });
 
-    const serviceIds = topServices.map((item) => item.serviceId);
-    const serviceMap = await prisma.service.findMany({
-      where: { id: { in: serviceIds } },
-    });
+    const serviceIds = topServices
+      .map((item) => item.serviceId)
+      .filter((id): id is string => id !== null && id !== undefined);
+    const serviceMap = serviceIds.length
+      ? await prisma.service.findMany({ where: { id: { in: serviceIds } } })
+      : [];
     const serviceNameById = new Map(serviceMap.map((service) => [service.id, service.name] as const));
 
     const lowStockProducts = await prisma.product.findMany();
@@ -2136,7 +2190,7 @@ protectedRouter.get(
       monthlyRevenue: payments._sum.amount ?? 0,
       topServices: topServices.map((item) => ({
         serviceId: item.serviceId,
-        name: serviceNameById.get(item.serviceId) ?? 'Servicio',
+        name: item.serviceId ? serviceNameById.get(item.serviceId) ?? 'Servicio' : 'Servicio eliminado',
         count: item._count.serviceId,
       })),
       lowStockProducts: lowStockCount,

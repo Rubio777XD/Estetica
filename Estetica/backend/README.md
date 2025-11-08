@@ -51,10 +51,10 @@ Los comandos `npm run db:seed:dry`, `npm run db:seed:apply` y `npm run db:reset-
 
 ## Modelo de servicios y soft-delete
 
-- El modelo `Service` incluye los flags `active` (visibilidad operativa) y `deletedAt` (borrado lógico). Cualquier consulta que alimente selectores del UI debe filtrar con `active: true` y `deletedAt: null`.
-- Las rutas `PATCH /services/:id/active` y `DELETE /services/:id` nunca eliminan citas: sólo actualizan estos flags y generan eventos SSE para refrescar dashboards.
-- `Booking` almacena `serviceNameSnapshot` y `servicePriceSnapshot`, por lo que el histórico mantiene la descripción original aun cuando el servicio sea desactivado o borrado lógicamente.
-- Al ejecutar `DELETE /services/:id` se actualizan los snapshots de todas las reservas vinculadas antes de marcar el servicio como borrado.
+- El modelo `Service` incluye los flags `active` (visibilidad operativa) y `deletedAt` (borrado lógico). Cualquier consulta que alimente selectores del UI debe filtrar con `active: true` y `deletedAt: null`. Se añadieron índices dedicados en ambos campos para acelerar filtros.
+- Las rutas `PATCH /services/:id/active` y `DELETE /services/:id` nunca eliminan citas automáticamente. El `DELETE` realiza soft delete por defecto (`active=false`, `deletedAt` con timestamp) y acepta `?force=true` para eliminar definitivamente tras asegurar snapshots y desasociar citas.
+- `Booking` almacena `serviceNameSnapshot`, `servicePriceSnapshot` **y** `serviceDurationSnapshot`, por lo que el histórico mantiene la descripción, precio y duración originales aun cuando el servicio cambie o se elimine.
+- Al ejecutar `DELETE /services/:id` se actualizan los snapshots de todas las reservas vinculadas antes de marcar el servicio. Con `?force=true` además se establece `serviceId = null` para preservar integridad y permitir la eliminación física.
 
 > **Tip:** si necesitas revisar manualmente los datos tras un borrado lógico ejecuta `npx prisma studio` (con la base configurada en `.env`) y comprueba que las filas de `Service` mantienen el `deletedAt` poblado pero conservan su `id` para las relaciones existentes.
 

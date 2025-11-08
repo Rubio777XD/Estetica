@@ -1,5 +1,10 @@
 # Registro de cambios
 
+# 2025-11-08
+- Normalizado el modelo de servicios en Prisma con `deletedAt`, índices (`active`, `deletedAt`) y snapshots de duración para las citas; agregada migración con backfill.
+- Implementado soft delete consistente (filtro por defecto `active:true`, `deletedAt:null`), endpoint `PATCH /services/:id/active` y hard delete opcional (`force=true`) que nulifica `serviceId` tras copiar snapshots.
+- Actualizado Dashboard (tipos y vistas) para soportar `serviceId` nulo y mostrar duración desde snapshots, además de documentación/seed/scripts alineados al nuevo flujo.
+
 # 2025-11-07
 - Reducidos los modales de "Crear cita" y "Asignar sin confirmación" para ajustarse a los nuevos anchos responsivos y mantener el scroll interno.
 - Actualizada la vista de Pagos y comisión para mostrar el nombre de la colaboradora (con respaldo en correo), mejorar el filtrado por nombre o correo y actualizar la exportación CSV acorde a los filtros aplicados.

@@ -4,8 +4,8 @@
 - Fuente principal: [`schema.prisma`](./schema.prisma). Datasource configurado para PostgreSQL mediante `DATABASE_URL`.
 - Modelos activos:
   - **User** → `id`, `email`, `passwordHash`, `name`, `role` (`ADMIN`, `EMPLOYEE`, `CLIENT`), `createdAt`, `updatedAt`.
-  - **Service** → catálogo con `name`, `price`, `duration` (minutos), `description`, `imageUrl` y `highlights` (`TEXT[]`). Índice por nombre para búsquedas públicas.
-  - **Booking** → agenda de citas (`clientName`, `serviceId`, `startTime`, `endTime`, `status`, `notes`) relacionada con `Service`.
+  - **Service** → catálogo con `name`, `price`, `duration` (minutos), `description?`, `imageUrl?`, `highlights` (`TEXT[]`) y flags `active`/`deletedAt` para soft delete. Índices en `name`, `active` y `deletedAt` para listas y panel administrativo.
+  - **Booking** → agenda de citas (`clientName`, `serviceId?`, `startTime`, `endTime`, `status`, `notes`) relacionada con `Service`. Persiste snapshots `serviceNameSnapshot`, `servicePriceSnapshot` y `serviceDurationSnapshot` para preservar histórico incluso tras eliminación del servicio.
   - **Payment** → pagos asociados a una cita (`bookingId`, `amount`, `method`) con índice por `createdAt` y `method`.
   - **Product** → inventario (`stock`, `lowStockThreshold`, `price`) para alertas de bajo inventario.
 - Enums:
@@ -23,7 +23,7 @@
 - El servidor (`backend/src/index.ts`) ejecuta `ensureCoreData()` al arrancar; garantiza que exista al menos un administrador (`BOOTSTRAP_ADMIN_EMAIL`, contraseña aleatoria si no se define) y reporta el resultado en consola.
 
 ## D. Integridad y validaciones
-- Todas las FK usan `ON DELETE RESTRICT` salvo `Payment.bookingId` (`CASCADE`).
+- Todas las FK usan `ON DELETE RESTRICT` salvo `Payment.bookingId` (`CASCADE`) y `Booking.serviceId` (`SET NULL` tras hard delete de servicios).
 - Los endpoints Express envuelven las respuestas en `{ success, message, data }` y validan entradas con Zod. Las operaciones críticas (crear usuario admin, servicios, etc.) propagan errores detallados si hay violaciones de unicidad (`P2002`) o FK.
 - El backend registra y limita intentos de login, elimina sesiones inválidas y siempre responde en JSON uniforme.
 

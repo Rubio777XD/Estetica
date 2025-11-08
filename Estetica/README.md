@@ -14,6 +14,7 @@ La última iteración incorpora un flujo integral para confirmar y terminar cita
 - Registro obligatorio de quién completó el servicio cuando se marca como terminado (`completedBy`).
 - Generación dinámica de horarios en la landing considerando los horarios del salón y bloqueando espacios ocupados.
 - Interfaz depurada: cards de servicios sin imágenes redundantes, dashboard con widgets simétricos (máx. 3 ítems visibles) y sin acciones obsoletas.
+- Gestión de servicios de punta a punta con soft delete (`deletedAt`) por defecto, eliminación forzada vía `force=true`, snapshots históricos (`serviceNameSnapshot`, `servicePriceSnapshot`, `serviceDurationSnapshot`) y filtros consistentes en API/UI.
 
 ## Tabla de contenidos
 - [✨ Actualización – Gestión avanzada de citas](#-actualización--gestión-avanzada-de-citas)
@@ -90,8 +91,8 @@ Backend API (Express, 3000) ───────────────▶ Neo
 
 ### Modelos clave
 - **User:** credenciales, nombre opcional y rol. Índices por correo.
-- **Service:** nombre único, precio, duración (5–480 min), `description?` (hasta 500 caracteres), highlights y relación `booking`.
-- **Booking:** referencia a `Service`, ventana `startTime`/`endTime`, estado, notas, campo `amountOverride?` para personalizar el monto final y asignación manual (`assignedEmail`, `assignedAt`).
+- **Service:** nombre legible, precio, duración (5–480 min), `description?` (hasta 500 caracteres), `imageUrl?`, `highlights[]`, banderas `active`/`deletedAt` para soft delete y relación `booking`. Índices en `name`, `active` y `deletedAt` para consultas rápidas.
+- **Booking:** referencia opcional a `Service` (`serviceId` se vuelve `null` tras hard delete), ventana `startTime`/`endTime`, estado, notas, `amountOverride?` y asignación manual (`assignedEmail`, `assignedAt`). Conserva snapshots obligatorios `serviceNameSnapshot`, `servicePriceSnapshot` y `serviceDurationSnapshot` para mantener histórico.
 - **Payment:** pagos vinculados a `Booking`, método y timestamps.
 - **Commission:** registro calculado por cita (`percentage`, `amount`, `assigneeEmail?`, `createdAt`) vinculado a `Booking`.
 - **Product:** inventario con umbral de stock bajo.
@@ -346,16 +347,18 @@ npm run dev -- --port 3003
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/services` | Lista completa (requiere sesión).
+| GET | `/api/services` | Lista completa (requiere sesión). Acepta `includeInactive=true` y/o `includeDeleted=true` para ampliar resultados; por defecto sólo devuelve servicios `active` y sin `deletedAt`.
 | POST | `/api/services` | Crea servicio (nombre ≤ 100, precio > 0, duración 5–480, `description?` ≤ 500).
 | PUT | `/api/services/:id` | Actualiza con las mismas reglas.
-| DELETE | `/api/services/:id` | Borra (protege contra servicios con citas).
+| PATCH | `/api/services/:id/active` | Activa o desactiva un servicio existente (`{ active: boolean }`). Requiere que `deletedAt` sea `null`.
+| DELETE | `/api/services/:id` | Soft delete por defecto (`active=false`, `deletedAt` poblado). Usa `?force=true` para hard delete que conserva snapshots y limpia `serviceId` en citas.
 
 #### Servicios con descripción
 
 - El modelo `Service` expone `description?: string | null` (campo opcional). El esquema Prisma ya incluía la columna, por lo que no fue necesaria una nueva migración.
 - Los endpoints `POST /api/services` y `PUT /api/services/:id` aceptan `description?` (hasta 500 caracteres); el backend normaliza cadenas vacías a `null`.
 - El Dashboard permite capturar y editar la descripción (se muestra resumida con tooltip) y la landing pública la renderiza en el catálogo de servicios.
+- Soft delete (`DELETE /api/services/:id`) marca `active=false` y rellena `deletedAt`. Con `?force=true` el backend nulifica `serviceId` en citas, preserva los snapshots (`serviceNameSnapshot`, `servicePriceSnapshot`, `serviceDurationSnapshot`) y elimina definitivamente el servicio sin romper histórico.
 
 ### Citas
 | Método | Ruta | Descripción |
@@ -497,6 +500,8 @@ Cuando agregues campos nuevos, ejecuta `npx prisma migrate dev --name <fix>` par
 3. **Cobro completo:** en próximas aplica override (p. ej. 300) y completa la cita con pago `cash` y comisión 50 %. La cita debe moverse a **Terminadas**, generar `Payment` y `Commission` y actualizar totales.
 4. **Reporte Pagos & Comisiones:** abre la sección correspondiente, filtra por rango del día y confirma totales + fila de la cita; prueba el botón **Exportar CSV** y ábrelo en Excel.
 5. **Landing pública:** valida que `/api/public/services` muestre descripciones y que la Landing refleje los cambios de servicios.
+6. **Soft delete de servicios:** desde el Dashboard elimina un servicio sin `force`; debe dejar de aparecer en selects, mantener `deletedAt` y conservar snapshots en citas existentes.
+7. **Hard delete forzado:** repite el flujo anterior llamando a `DELETE /api/services/:id?force=true`; el servicio debe desaparecer aun con citas históricas y éstas conservar `serviceNameSnapshot`, `servicePriceSnapshot`, `serviceDurationSnapshot` con `serviceId = null`.
 
 ## Contribución y scripts útiles
 - Backend:

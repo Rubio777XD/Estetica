@@ -20,9 +20,10 @@ export interface Booking {
   id: string;
   clientName: string;
   clientEmail?: string | null;
-  serviceId: string;
+  serviceId: string | null;
   serviceNameSnapshot: string;
   servicePriceSnapshot: number;
+  serviceDurationSnapshot: number;
   startTime: string;
   endTime: string;
   status: BookingStatus;
@@ -36,7 +37,7 @@ export interface Booking {
   completedBy?: string | null;
   createdAt: string;
   updatedAt: string;
-  service: Service;
+  service: Service | null;
   payments?: Payment[];
   assignments?: Assignment[];
   commissions?: Commission[];
@@ -146,7 +147,7 @@ export interface StatsOverviewResponse {
     canceled: number;
   };
   monthlyRevenue: number;
-  topServices: { serviceId: string; name: string; count: number }[];
+  topServices: { serviceId: string | null; name: string; count: number }[];
   lowStockProducts: number;
 }
 

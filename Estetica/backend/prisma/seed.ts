@@ -211,6 +211,7 @@ export async function runSeed(prisma: SeedClient, options: RunSeedOptions = {}) 
       amountOverride: seed.amountOverride ?? null,
       serviceNameSnapshot: service.name,
       servicePriceSnapshot: service.price,
+      serviceDurationSnapshot: service.duration,
     };
 
     const booking = await prisma.booking.upsert({

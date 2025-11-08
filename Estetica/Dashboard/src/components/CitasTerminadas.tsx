@@ -126,12 +126,15 @@ export default function CitasTerminadas() {
                       {booking.service?.name ?? booking.serviceNameSnapshot}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-xs uppercase text-gray-500">Duración</p>
-                    <p className="text-sm text-gray-700">
-                      {booking.service?.duration ? `${booking.service.duration} minutos` : 'No disponible'}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-xs uppercase text-gray-500">Duración</p>
+                  <p className="text-sm text-gray-700">
+                    {(() => {
+                      const durationMinutes = booking.service?.duration ?? booking.serviceDurationSnapshot;
+                      return durationMinutes > 0 ? `${durationMinutes} minutos` : 'No disponible';
+                    })()}
+                  </p>
+                </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div>

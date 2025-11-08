@@ -551,6 +551,8 @@ checks.push({
       { table: 'Assignment', column: '"expiresAt"' },
       { table: 'Assignment', column: '"token"', unique: true },
       { table: 'Booking', column: '"assignedEmail"' },
+      { table: 'Service', column: '"active"' },
+      { table: 'Service', column: '"deletedAt"' },
       { table: 'Commission', column: '"bookingId"' },
       { table: 'Commission', column: '"assigneeEmail"' },
     ];
@@ -694,6 +696,9 @@ checks.push({
           status: BookingStatus.scheduled,
           invitedEmails: ['a@x.com', 'b@x.com'],
           assignedEmail: 'tester@example.com',
+          serviceNameSnapshot: service.name,
+          servicePriceSnapshot: service.price,
+          serviceDurationSnapshot: service.duration,
         },
       });
 

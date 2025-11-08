@@ -269,6 +269,7 @@ export default function CitasProximas() {
     const isCompleting = completing[booking.id];
     const hasOverride = typeof booking.amountOverride === 'number' && booking.amountOverride > 0;
     const isCancelling = cancelling[booking.id];
+    const durationMinutes = booking.service?.duration ?? booking.serviceDurationSnapshot;
 
     return (
       <Card key={booking.id} className="border border-gray-200 shadow-sm">
@@ -292,7 +293,7 @@ export default function CitasProximas() {
               </p>
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {booking.service?.duration ? `${booking.service.duration} minutos` : 'Duración no disponible'}
+                {durationMinutes > 0 ? `${durationMinutes} minutos` : 'Duración no disponible'}
               </p>
             </div>
             <div className="space-y-1">

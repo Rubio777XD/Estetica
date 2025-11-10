@@ -33,6 +33,11 @@ enum PaymentMethod {
   transfer
 }
 
+enum PaymentStatus {
+  pending
+  paid
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -90,9 +95,9 @@ model Booking {
   updatedAt       DateTime      @updatedAt
 
   service     Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  payments    Payment[]
+  payment     Payment?
   assignments Assignment[]
-  commissions Commission[]
+  commission  Commission?
 
   @@index([startTime])
   @@index([status])
@@ -102,20 +107,22 @@ model Booking {
 
 model Payment {
   id        String        @id @default(cuid())
-  bookingId String
+  bookingId String       @unique
   amount    Float
   method    PaymentMethod
+  status    PaymentStatus @default(paid)
   createdAt DateTime      @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
   @@index([method])
+  @@index([status])
 }
 
 model Commission {
   id            String   @id @default(cuid())
-  bookingId     String
+  bookingId     String   @unique
   percentage    Float
   amount        Float
   assigneeEmail String?
@@ -123,7 +130,6 @@ model Commission {
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
-  @@index([bookingId])
   @@index([assigneeEmail])
 }
 

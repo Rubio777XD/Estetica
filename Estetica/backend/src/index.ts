@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { createHash, randomBytes } from 'crypto';
 import { z } from 'zod';
-import { AssignmentStatus, BookingStatus, PaymentMethod, Prisma, Role } from '@prisma/client';
+import { AssignmentStatus, BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role } from '@prisma/client';
 
 import { prisma } from './db';
 import { authJWT, AuthedRequest } from './authJWT';
@@ -1048,7 +1048,7 @@ protectedRouter.get(
     const bookings = await prisma.booking.findMany({
       where,
       orderBy: { startTime: 'asc' },
-      include: { service: true, payments: true },
+      include: { service: true, payment: true, commission: true },
       take: limit ?? 100,
     });
 
@@ -1093,7 +1093,7 @@ protectedRouter.get(
         OR: [{ assignedEmail: { not: null } }, { performedByName: { not: null } }],
       },
       orderBy: { startTime: 'asc' },
-      include: { service: true, payments: true },
+      include: { service: true, payment: true, commission: true },
       take: 200,
     });
 
@@ -1145,7 +1145,7 @@ protectedRouter.post(
 
       return tx.booking.create({
         data,
-        include: { service: true, payments: true },
+        include: { service: true, payment: true, commission: true },
       });
     });
 
@@ -1199,7 +1199,7 @@ publicRouter.post(
 
       return tx.booking.create({
         data,
-        include: { service: true, payments: true },
+        include: { service: true, payment: true, commission: true },
       });
     });
 
@@ -1257,7 +1257,7 @@ protectedRouter.put(
       return tx.booking.update({
         where: { id: req.params.id },
         data: updateData,
-        include: { service: true, payments: true },
+        include: { service: true, payment: true, commission: true },
       });
     });
 
@@ -1289,7 +1289,7 @@ protectedRouter.patch(
     const booking = await prisma.booking.update({
       where: { id: req.params.id },
       data: { amountOverride: amount ?? null },
-      include: { service: true, payments: true },
+      include: { service: true, payment: true, commission: true },
     });
 
     broadcastEvent('booking:updated', { id: booking.id }, 'auth');
@@ -1314,7 +1314,7 @@ protectedRouter.patch(
     const booking = await prisma.booking.update({
       where: { id: req.params.id },
       data: { status: result.data.status },
-      include: { service: true, payments: true },
+      include: { service: true, payment: true, commission: true },
     });
 
     if (booking.status === BookingStatus.confirmed && previousStatus !== BookingStatus.confirmed) {
@@ -1327,7 +1327,7 @@ protectedRouter.patch(
             to: contactEmail,
             bookingId: booking.id,
             clientName: booking.clientName,
-            serviceName: booking.service.name,
+            serviceName: booking.service?.name ?? booking.serviceNameSnapshot,
             start: booking.startTime,
             end: booking.endTime,
             assignedName: professionalName,
@@ -1384,7 +1384,7 @@ protectedRouter.post(
           performedByName: collaboratorName,
           assignedAt: booking.assignedAt ?? new Date(),
         },
-        include: { service: true, payments: true },
+        include: { service: true, payment: true, commission: true },
       });
     });
 
@@ -1438,7 +1438,8 @@ protectedRouter.post(
         throw new HttpError(409, 'La cita ya fue completada');
       }
 
-      const baseAmount = amount ?? booking.amountOverride ?? booking.service.price;
+      const servicePrice = booking.service?.price ?? booking.servicePriceSnapshot;
+      const baseAmount = amount ?? booking.amountOverride ?? servicePrice;
       if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
         throw new HttpError(400, 'El monto final de la cita es inválido');
       }
@@ -1446,27 +1447,41 @@ protectedRouter.post(
       const finalAmount = roundCurrency(baseAmount);
       const commissionAmount = roundCurrency((finalAmount * commissionPercentage) / 100);
 
-      const payment = await tx.payment.create({
-        data: {
+      const payment = await tx.payment.upsert({
+        where: { bookingId: booking.id },
+        update: {
+          amount: finalAmount,
+          method,
+          status: PaymentStatus.paid,
+        },
+        create: {
           bookingId: booking.id,
           amount: finalAmount,
           method,
+          status: PaymentStatus.paid,
         },
       });
 
-      const commission = await tx.commission.create({
-        data: {
+      const normalizedAssignee = booking.assignedEmail ? normalizeEmail(booking.assignedEmail) : null;
+      const commission = await tx.commission.upsert({
+        where: { bookingId: booking.id },
+        update: {
+          percentage: commissionPercentage,
+          amount: commissionAmount,
+          assigneeEmail: normalizedAssignee,
+        },
+        create: {
           bookingId: booking.id,
           percentage: commissionPercentage,
           amount: commissionAmount,
-          assigneeEmail: booking.assignedEmail ?? null,
+          assigneeEmail: normalizedAssignee,
         },
       });
 
       const updatedBooking = await tx.booking.update({
         where: { id: booking.id },
         data: { status: BookingStatus.done, completedBy: completedByName },
-        include: { service: true, payments: true, commissions: true },
+        include: { service: true, payment: true, commission: true },
       });
 
       return { booking: updatedBooking, payment, commission };
@@ -1560,7 +1575,7 @@ protectedRouter.post(
       await sendAssignmentEmail({
         to: normalizedEmail,
         clientName: booking.clientName,
-        serviceName: booking.service.name,
+        serviceName: booking.service?.name ?? booking.serviceNameSnapshot,
         start: booking.startTime,
         end: booking.endTime,
         notes: booking.notes ?? null,
@@ -1673,8 +1688,19 @@ protectedRouter.post(
         throw new HttpError(404, 'Cita no encontrada para pago');
       }
 
-      return tx.payment.create({
-        data: result.data,
+      return tx.payment.upsert({
+        where: { bookingId: result.data.bookingId },
+        update: {
+          amount: result.data.amount,
+          method: result.data.method,
+          status: PaymentStatus.paid,
+        },
+        create: {
+          bookingId: result.data.bookingId,
+          amount: result.data.amount,
+          method: result.data.method,
+          status: PaymentStatus.paid,
+        },
         include: { booking: { include: { service: true } } },
       });
     });
@@ -1703,38 +1729,33 @@ type CommissionRow = {
 };
 
 const mapBookingsToCommissionRows = (
-  bookings: Array<Prisma.BookingGetPayload<{ include: { service: true; payments: true; commissions: true } }>>
+  bookings: Array<Prisma.BookingGetPayload<{ include: { service: true; payment: true; commission: true } }>>
 ): CommissionRow[] => {
   return bookings.map((booking) => {
-    const latestPayment = booking.payments.reduce<typeof booking.payments[number] | null>((latest, current) => {
-      if (!latest) return current;
-      return new Date(current.createdAt).getTime() > new Date(latest.createdAt).getTime() ? current : latest;
-    }, null);
+    const payment = booking.payment;
+    const commission = booking.commission;
+    const servicePrice = booking.service?.price ?? booking.servicePriceSnapshot;
+    const serviceName = booking.service?.name ?? booking.serviceNameSnapshot;
 
-    const latestCommission = booking.commissions.reduce<typeof booking.commissions[number] | null>((latest, current) => {
-      if (!latest) return current;
-      return new Date(current.createdAt).getTime() > new Date(latest.createdAt).getTime() ? current : latest;
-    }, null);
-
-    const amount = latestPayment?.amount ?? booking.amountOverride ?? booking.service.price;
-    const commissionAmount = latestCommission?.amount ?? 0;
-    const percentage = latestCommission?.percentage ?? 0;
+    const amount = payment?.amount ?? booking.amountOverride ?? servicePrice;
+    const commissionAmount = commission?.amount ?? 0;
+    const percentage = commission?.percentage ?? 0;
     const assignedName = getBookingCollaboratorName(booking, booking.assignedEmail ?? undefined);
-    const commissionAssigneeName = latestCommission?.assigneeEmail
-      ? getBookingCollaboratorName(booking, latestCommission.assigneeEmail)
+    const commissionAssigneeName = commission?.assigneeEmail
+      ? getBookingCollaboratorName(booking, commission.assigneeEmail)
       : null;
 
     return {
       bookingId: booking.id,
       clientName: booking.clientName,
-      serviceName: booking.service.name,
+      serviceName,
       startTime: booking.startTime.toISOString(),
       assignedEmail: booking.assignedEmail,
       assignedName,
-      commissionAssigneeEmail: latestCommission?.assigneeEmail ?? null,
+      commissionAssigneeEmail: commission?.assigneeEmail ?? null,
       commissionAssigneeName,
-      paymentMethod: latestPayment?.method ?? null,
-      paymentCreatedAt: latestPayment?.createdAt ?? null,
+      paymentMethod: payment?.method ?? null,
+      paymentCreatedAt: payment?.createdAt ?? null,
       amount: roundCurrency(amount ?? 0),
       commissionAmount: roundCurrency(commissionAmount),
       commissionPercentage: percentage,
@@ -1826,8 +1847,14 @@ protectedRouter.post(
         throw new HttpError(404, 'Cita no encontrada');
       }
 
-      return tx.commission.create({
-        data: {
+      return tx.commission.upsert({
+        where: { bookingId },
+        update: {
+          percentage,
+          amount: roundCurrency(amount),
+          assigneeEmail: normalizedEmail,
+        },
+        create: {
           bookingId,
           percentage,
           amount: roundCurrency(amount),
@@ -1871,13 +1898,13 @@ protectedRouter.get(
     if (collaboratorEmail) {
       const normalizedCollaborator = normalizeEmail(collaboratorEmail);
       searchOr.push({ assignedEmail: normalizedCollaborator });
-      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+      searchOr.push({ commission: { is: { assigneeEmail: normalizedCollaborator } } });
     }
 
     if (collaboratorQuery && EMAIL_MATCHER.test(collaboratorQuery)) {
       const normalizedCollaborator = normalizeEmail(collaboratorQuery);
       searchOr.push({ assignedEmail: normalizedCollaborator });
-      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+      searchOr.push({ commission: { is: { assigneeEmail: normalizedCollaborator } } });
     }
 
     if (searchOr.length > 0) {
@@ -1887,7 +1914,7 @@ protectedRouter.get(
     const bookings = await prisma.booking.findMany({
       where,
       orderBy: { startTime: 'desc' },
-      include: { service: true, payments: true, commissions: true },
+      include: { service: true, payment: true, commission: true },
       take: 500,
     });
 
@@ -1946,13 +1973,13 @@ protectedRouter.get(
     if (collaboratorEmail) {
       const normalizedCollaborator = normalizeEmail(collaboratorEmail);
       searchOr.push({ assignedEmail: normalizedCollaborator });
-      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+      searchOr.push({ commission: { is: { assigneeEmail: normalizedCollaborator } } });
     }
 
     if (collaboratorQuery && EMAIL_MATCHER.test(collaboratorQuery)) {
       const normalizedCollaborator = normalizeEmail(collaboratorQuery);
       searchOr.push({ assignedEmail: normalizedCollaborator });
-      searchOr.push({ commissions: { some: { assigneeEmail: normalizedCollaborator } } });
+      searchOr.push({ commission: { is: { assigneeEmail: normalizedCollaborator } } });
     }
 
     if (searchOr.length > 0) {
@@ -1962,7 +1989,7 @@ protectedRouter.get(
     const bookings = await prisma.booking.findMany({
       where,
       orderBy: { startTime: 'desc' },
-      include: { service: true, payments: true, commissions: true },
+      include: { service: true, payment: true, commission: true },
     });
 
     const rows = mapBookingsToCommissionRows(bookings);

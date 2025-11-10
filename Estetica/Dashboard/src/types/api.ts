@@ -1,5 +1,6 @@
 export type BookingStatus = 'scheduled' | 'confirmed' | 'done' | 'canceled';
 export type PaymentMethod = 'cash' | 'transfer';
+export type PaymentStatus = 'pending' | 'paid';
 export type AssignmentStatus = 'pending' | 'accepted' | 'declined' | 'expired';
 
 export interface Service {
@@ -38,9 +39,9 @@ export interface Booking {
   createdAt: string;
   updatedAt: string;
   service: Service | null;
-  payments?: Payment[];
+  payment?: Payment | null;
   assignments?: Assignment[];
-  commissions?: Commission[];
+  commission?: Commission | null;
 }
 
 export interface Assignment {
@@ -58,6 +59,7 @@ export interface Payment {
   bookingId: string;
   amount: number;
   method: PaymentMethod;
+  status: PaymentStatus;
   createdAt: string;
   booking?: Booking;
 }

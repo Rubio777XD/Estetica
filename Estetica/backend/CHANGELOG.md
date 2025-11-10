@@ -1,5 +1,11 @@
 # Changelog
 
+## 2024-11-11
+
+- Asegurada la relación uno a uno entre citas, pagos y comisiones con validaciones y `upsert` en el flujo de finalización.
+- Añadido estado del pago y migración que elimina duplicados previos para mantener integridad referencial.
+- Normalizados los endpoints y el dashboard para consumir `payment`/`commission` únicos por cita y reflejar montos consistentes.
+
 ## 2024-11-09
 
 - Asegurada la regeneración automática de Prisma Client en `npm install` y `npm run dev` para evitar clientes desfasados que provoquen errores `Unknown argument 'active'`/`'deletedAt'`.

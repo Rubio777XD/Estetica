@@ -55,11 +55,7 @@ export default function CitasTerminadas() {
   );
 
   const totalAmount = useMemo(
-    () =>
-      bookings.reduce((sum, booking) => {
-        const payments = booking.payments ?? [];
-        return sum + payments.reduce((acc, payment) => acc + payment.amount, 0);
-      }, 0),
+    () => bookings.reduce((sum, booking) => sum + (booking.payment?.amount ?? 0), 0),
     [bookings]
   );
 
@@ -104,7 +100,7 @@ export default function CitasTerminadas() {
     return (
       <div className="space-y-4">
         {bookings.map((booking) => {
-          const totalPaid = (booking.payments ?? []).reduce((acc, payment) => acc + payment.amount, 0);
+          const totalPaid = booking.payment?.amount ?? 0;
           return (
             <Card key={booking.id} className="border border-gray-200">
               <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">

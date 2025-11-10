@@ -1,5 +1,10 @@
 # Registro de cambios
 
+# 2025-11-11
+- Consolidado el flujo de finalización de citas para generar/actualizar pagos y comisiones únicos, y normalizar los endpoints de reportes.
+- Añadido estado al modelo de pagos y migración que depura duplicados para mantener integridad referencial.
+- Ajustado el dashboard para consumir las nuevas relaciones `payment`/`commission` y reflejar los montos al terminar una cita.
+
 # 2025-11-10
 - Alineado el catálogo público y los reportes de servicios para respetar los filtros `active:true` y `deletedAt:null`, evitando
   referencias a servicios eliminados en la API protegida de métricas.
